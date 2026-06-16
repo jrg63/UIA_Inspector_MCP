@@ -2,7 +2,7 @@
  * ============================================================================ *
  * @author      RaptorX                                                        *
  * @version     0.0.0                                                          *
-  * @devPath     S:\lib\v2\OpenRouter\OpenRouter.ahk                            *
+  * @devPath     S:\lib\v2\DeepSeek\OpenRouter.ahk                            *
  * @description                                                                *
  * =========================================================================== *
  * Want a clear path for learning AutoHotkey?                                  *
@@ -25,71 +25,54 @@
  */
 class OpenRouter {
 	static ModelData := map()
-	static api_base := 'https://openrouter.ai/api/v1'
+	static api_base := 'https://api.deepseek.com/v1'
 	static headers := Map(
-		'Authorization', '', ; <OPENROUTER_API_KEY>
-		'HTTP-Referer' , '', ; <YOUR_SITE_URL>  Optional. Site URL for rankings on openrouter.ai.
-		'X-Title'      , '', ; <YOUR_SITE_NAME> Optional. Site title for rankings on openrouter.ai.
+		'Authorization', '', ; <DEEPSEEK_API_KEY>
 		'Content-Type' , 'application/json',
 	)
 
-	static ini := 'settings.ini'
+	static ini := 'UIA_Inspector_settings.ini'
 	static authorized => !!this.headers['Authorization']
-
-	static GetModelList() 
-	{
-		res := OpenRouter.Request('GET', 'models')
-		data := Map()
-		for i, aiModelinfo in JSON.Parse(res.ResponseText)['data']
-		{
-			data[aiModelinfo['name']] := aiModelinfo
-		}
-
-		return this.ModelData := data
-	}
 
 	/**
 	 *
 	 * @param {String} api_key
-	 * @param {Map} headers custom headers that can be used to update basic headers\
-	 *                      like HTTP-Referer or X-Title on all following requests
+	 * @param {Map} headers custom headers that can be used to update basic headers
 	 * @returns {true|false}
 	 */
 	static Authenticate(api_key, headers := Map()) {
-		OutputDebug '--- ' A_ThisFunc ' start ---'
+		OutputDebug '--- ' A_ThisFunc ' start ---' '`n'
 
-		OutputDebug 'validating parameters'
+		OutputDebug 'validating parameters`n'
 		if !(api_key is String)
 			throw TypeError('expected api_key to be a String', -1, 'got: ' Type(api_key))
 		if !(headers is Map)
 			throw TypeError('expected headers to be a Map', -1, 'got: ' Type(headers))
 
-		OutputDebug 'setting custom headers'
+		OutputDebug 'setting custom headers`n'
 		for key, val in headers {
 			if !val || !key || key ~= 'i)Authorization|Content-Type'
-			{
-				OutputDebug 'ignoring ' key ' - ' val
-				continue
-			}
-
-			OutputDebug 'setting ' key ' to ' val
+			continue
 			OpenRouter.headers[key] := val
 		}
 
-		OutputDebug 'setting authorization token'
+		OutputDebug 'setting authorization token`n'
 		OpenRouter.headers['Authorization'] := Format('Bearer {}', api_key)
 
-		http := OpenRouter.Request('GET', 'models/user')
-
-		OutputDebug http.Status ': ' http.StatusText ;'`n---`n'
-		OutputDebug SubStr(http.ResponseText, 1, 400)
-		if !res := http.Status = 200
-		{
-			OutputDebug 'resetting Authorization key'
+		; Validate by making a lightweight models list request
+		try {
+			http := OpenRouter.Request('GET', 'models')
+			res := http.Status = 200
+			if !res {
+				OutputDebug 'resetting Authorization key`n'
+				OpenRouter.headers['Authorization'] := ''
+			}
+		} catch {
 			OpenRouter.headers['Authorization'] := ''
+			res := false
 		}
 
-		OutputDebug '--- ' A_ThisFunc ' end ---'
+		OutputDebug '--- ' A_ThisFunc ' end ---' '`n'
 		return res
 	}
 
@@ -104,8 +87,8 @@ class OpenRouter {
 	 * @returns {typeof OpenRouter.RawResponse | typeof Func}
 	 */
 	static Request(method, endpoint, headers := Map(), body?, async?) {
-		OutputDebug '--- ' A_ThisFunc ' start ---'
-		OutputDebug 'validating parameters'
+		OutputDebug '--- ' A_ThisFunc ' start ---' '`n'
+		OutputDebug 'validating parameters`n'
 		if !(method is String)
 			throw TypeError('expected method to be a String', -1, 'got: ' Type(method))
 		if !(endpoint is String)
@@ -119,33 +102,33 @@ class OpenRouter {
 
 		URL := OpenRouter.api_base '/' endpoint
 		http := ComObject('WinHttp.WinHttpRequest.5.1')
-		OutputDebug 'starting request to ' URL
+		OutputDebug 'starting request to ' URL '`n'
 		http.Open(method, URL, true)
 
-		OutputDebug 'setting custom headers'
+		OutputDebug 'setting custom headers`n'
 		for header, value in headers {
 			if !value {
-				OutputDebug 'ignoring ' header ' because of empty value'
+				OutputDebug 'ignoring ' header ' because of empty value' '`n'
 				continue
 			}
 
-			OutputDebug 'setting ' header ' to ' value
+			OutputDebug 'setting ' header ' to ' value '`n'
 			OpenRouter.headers[header] := value
 		}
 
-		OutputDebug 'setting headers'
+		OutputDebug 'setting headers`n'
 		for header, value in OpenRouter.headers {
 			if !value {
-				OutputDebug 'ignoring ' header ' because of empty value'
+				OutputDebug 'ignoring ' header ' because of empty value' '`n'
 				continue
 			}
 
-			OutputDebug 'setting ' header ' to ' value
+			OutputDebug 'setting ' header ' to ' value '`n'
 			http.SetRequestHeader(header, value)
 		}
 
 		http.Send(IsSet(body) ? s:= JSON.Stringify(body) : '')
-		OutputDebug '--- ' A_ThisFunc ' end ---'
+		OutputDebug '--- ' A_ThisFunc ' end ---' '`n'
 
 		switch IsSet(async) {
 		case true:
@@ -163,8 +146,7 @@ class OpenRouter {
 	 * and many optional ones. Here you can find a list of some general parameters\
 	 * and some specific to this interface.
 	 * 
-	 * {@link https://openrouter.ai/docs/api-reference/parameters General Parameters}\
-	 * {@link https://openrouter.ai/docs/api-reference/completion Completion Parameters}
+	 * {@link https://api-docs.deepseek.com/ General Parameters}
 	 *
 	 * ---
 	 * 
@@ -175,8 +157,8 @@ class OpenRouter {
 	 */
 	class Completions {
 		__New(body){
-			OutputDebug '--- ' A_ThisFunc ' start ---'
-			OutputDebug 'validating parameters'
+			OutputDebug '--- ' A_ThisFunc ' start ---' '`n'
+			OutputDebug 'validating parameters`n'
 			if !(body is Object)
 				throw TypeError('expected body to be an Object', -1, 'got: ' Type(body))
 
@@ -185,26 +167,31 @@ class OpenRouter {
 					throw ValueError('required property missing for completions body', -1, 'missing: ' prop)
 			}
 
-			OutputDebug 'validating authorization'
+			OutputDebug 'validating authorization`n'
 			if !OpenRouter.authorized
 			{
-				OutputDebug 'not authorized, trying to authenticate'
-				if !FileExist(OpenRouter.ini)
-					throw TargetError('no ini file has been configured in OpenRouter.ini')
-
-				if !OpenRouter.Authenticate(IniRead(OpenRouter.ini, 'OpenRouter', 'api_key', ''))
-					throw Error('could not authenticate with open router')
+				OutputDebug 'not authorized, trying to authenticate`n'
+				try {
+					apiKey := IniRead(A_ScriptDir "\settings.ini", "DeepSeek", "api_key", "")
+					if apiKey = ""
+						throw Error("No DeepSeek API key configured.")
+					if !OpenRouter.Authenticate(apiKey)
+						throw Error('could not authenticate with DeepSeek')
+				} catch as err {
+					throw Error(err.Message)
+				}
 			}
 
-			OutputDebug 'creating the completions request'
+			OutputDebug 'creating the completions request`n'
 			res := OpenRouter.Request('POST', 'completions',, body)
+			; OutputDebug 'raw response text: ' res.ResponseText '`n'
 
-			OutputDebug 'parsing the response'
+			OutputDebug 'parsing the response`n'
 			for key, val in JSON.Parse(res.ResponseText)
 				this.%key% := val
 
 			this.Base := OpenRouter.Response.Prototype
-			OutputDebug '--- ' A_ThisFunc ' end ---'
+			OutputDebug '--- ' A_ThisFunc ' end ---' '`n'
 		}
 	}
 
@@ -215,8 +202,7 @@ class OpenRouter {
 		 * and many optional ones. Here you can find a list of some general parameters\
 		 * and some specific to this interface.
 		 * 
-		 * {@link https://openrouter.ai/docs/api-reference/parameters General Parameters}\
-		 * {@link https://openrouter.ai/docs/api-reference/chat-completion Chat Completion Parameters}
+		 * {@link https://api-docs.deepseek.com/guides/chat_api DeepSeek Chat Completion API}
 		 *
 		 * ---
 		 * 
@@ -227,8 +213,8 @@ class OpenRouter {
 		 */
 		class Completions {
 			__New(body){
-				OutputDebug '--- ' A_ThisFunc ' start ---'
-				OutputDebug 'validating parameters'
+				OutputDebug '--- ' A_ThisFunc ' start ---' '`n'
+				OutputDebug 'validating parameters`n'
 				if !(body is Object)
 					throw TypeError('expected body to be an Object', -1, 'got: ' Type(body))
 
@@ -247,26 +233,35 @@ class OpenRouter {
 					}
 				}
 
-				OutputDebug 'validating authorization'
+				OutputDebug 'validating authorization`n'
 				if !OpenRouter.authorized
 				{
-					OutputDebug 'not authorized, trying to authenticate'
-					if !FileExist(OpenRouter.ini)
-						throw TargetError('no ini file has been configured in OpenRouter.ini')
-
-					if !OpenRouter.Authenticate(IniRead(OpenRouter.ini, 'OpenRouter', 'api_key', ''))
-						throw Error('could not authenticate with open router')
+					OutputDebug 'not authorized, trying to authenticate`n'
+					try {
+						apiKey := IniRead(A_ScriptDir "\settings.ini", "DeepSeek", "api_key", "")
+						if apiKey = ""
+							throw Error("No DeepSeek API key configured.`n`nOpen Preferences and paste your key into the 'API Key' field.")
+						if !OpenRouter.Authenticate(apiKey)
+							throw Error('could not authenticate with DeepSeek')
+					} catch as err {
+						throw Error(err.Message)
+					}
 				}
 
-				OutputDebug 'creating the completions request'
+				OutputDebug 'creating the completions request`n'
 				res := OpenRouter.Request('POST', 'chat/completions',, body)
+				; OutputDebug 'raw response text: ' res.ResponseText '`n'
 
-				OutputDebug 'parsing the response'
+				OutputDebug 'creating the completions request`n'
+				OutputDebug 'parsing the response`n'
 				for key, val in JSON.Parse(res.ResponseText)
+				{
+					OutputDebug 'setting property ' key ' to ' val '`n'
 					this.%key% := val
+				}
 
 				this.Base := OpenRouter.Response.Prototype
-				OutputDebug '--- ' A_ThisFunc ' end ---'
+				OutputDebug '--- ' A_ThisFunc ' end ---' '`n'
 			}
 
 		}
@@ -1334,7 +1329,7 @@ class OpenRouter {
 		while async.Status = status.Started
 			Sleep 10
 		if async.Status = status.Error {
-			OutputDebug async.ErrorCode.value
+			OutputDebug async.ErrorCode.value '`n'
 			throw async.ErrorCode
 		}
 		try return async.GetResults()

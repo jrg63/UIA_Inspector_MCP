@@ -120,7 +120,7 @@ Class triggers
 
 	static __New()
 	{
-		this.ini := A_ScriptDir "\settings.ini"
+		this.ini := A_ScriptDir "\UIA_Inspector_settings.ini"
 		this.tray := A_TrayMenu
 		this.tray.delete()
 		this.LoadAllHotkeys()

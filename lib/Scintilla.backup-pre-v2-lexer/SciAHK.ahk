@@ -1,6 +1,6 @@
 ﻿#Requires AutoHotkey v2.0
 ; #include A_LineFile\..\SciKeywords.ahk
-#include <Scintilla\scintilla>
+#include <UIA_Inspector\Scintilla\scintilla>
 sfile := 'S:\Recently Modified Files\lib\Scintilla\scintilla_example.ahk'
 ; g := Gui()
 ; sci := SCIahk(g)

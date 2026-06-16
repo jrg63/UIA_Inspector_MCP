@@ -42,19 +42,21 @@ DetectHiddenWindows true
 ; Hotkey: F1 to capture element under mouse (configurable below)
 ; ══════════════════════════════════════════════════════════════════
 
-#Include ..\UIA\UIA.ahk
-global UIA_INCLUDE_SOURCE := A_ScriptDir "\..\UIA\UIA.ahk"  ; keep in sync with the #Include above — used when emitting generated scripts
+#include <GetSpecialFolders>
+#Include <UIA>
+global UIA_INCLUDE_SOURCE := _ahklib "\UIA.ahk"  ; keep in sync with the #Include above — used when emitting generated scripts
+UIAI_LibPath := _ahklib "\UIA_Inspector" ; used by UIA.ahk to resolve its own #Includes
 
 ; #Include <UIA>  ; put uia into the lib folder and enable this line
-#Include <Scintilla\scintilla>
-#Include <Triggers>
-#Include <WinTitleColor>
-#Include <ScriptObject>
-#Include <cjson>
-#Include <NotifyV2>
-#Include lib\OpenRouter.ahk
-#Include lib\AIContext.ahk
-#Include lib\AskAIChat.ahk
+#Include <UIA_Inspector\Scintilla\scintilla>
+#Include <UIA_Inspector\Triggers>
+#Include <UIA_Inspector\WinTitleColor>
+#Include <UIA_Inspector\ScriptObject>
+#Include <UIA_Inspector\cjson>
+#Include <UIA_Inspector\NotifyV2>
+#Include <UIA_Inspector\OpenRouter>
+#Include <UIA_Inspector\AIContext>
+#Include <UIA_Inspector\AskAIChat>
 
 ; ── Script Object ───────────────────────────────
 script := {
@@ -67,15 +69,15 @@ script := {
     moddate      : "2026-04-14",
     resfolder    : A_ScriptDir "\res",
     iconfile     : A_ScriptDir '\res\main.ico',
-    config       : A_ScriptDir "\settings.ini",
+    config       : A_ScriptDir "\UIA_Inspector_settings.ini",
     homepagetext : "UIA Inspector",
     homepagelink : "the-Automator.com/UIA?src=app",
     VideoLink    : "",
     DevPath      : "S:\lib\v2\UIA2\UIA_Inspector.ahk",
     donateLink   : "",
 }
-TraySetIcon 'res\UIA.ico'
-(Scintilla) ; Init Scintilla class
+TraySetIcon UIAI_LibPath "\UIA.ico"
+(Scintilla) ; Init Scintilla class (uses UIAI_LibPath for DLL paths when set)
 
 ; ── Triggers + Preferences ──────────────────────
 triggers.AddHotkey(CaptureHotkeyFired, "Capture Element", "F1")
@@ -233,7 +235,7 @@ class UIA_Inspector {
         this.chkShowAllProps := this.gui.AddCheckbox("x+4 yp", "Show &All")
         this.chkShowAllProps.Value := APP_SETTINGS.showAllProps
         this.chkShowAllProps.OnEvent("Click", (*) => (
-            IniWrite(this.chkShowAllProps.Value, A_ScriptDir "\settings.ini", "Settings", "ShowAllProps"),
+            IniWrite(this.chkShowAllProps.Value, A_ScriptDir "\UIA_Inspector_settings.ini", "Settings", "ShowAllProps"),
             this.PopulateProperties(this.capturedElement)))
         this.lvProps := this.gui.AddListView("x200 y+2 w210 h140 -Hdr +LV0x4000 ReadOnly", ["Property", "Value"])
         this.lvProps.ModifyCol(1, 85)
@@ -282,7 +284,7 @@ class UIA_Inspector {
         this.btnAskAI := this.gui.AddButton("x+4 yp w55 h21 Disabled", "Ask AI")
         this.btnAskAI.OnEvent("Click", (*) => this.OnAskAI())
         this._askAIChat := ""     ; lazy-created AskAIChat instance
-        this._aiModel := IniRead(A_ScriptDir "\settings.ini", "AI", "Model", "anthropic/claude-sonnet-4.5")
+        this._aiModel := IniRead(A_ScriptDir "\UIA_Inspector_settings.ini", "AI", "Model", "deepseek-v4-flash")
         this.btnClearInspector := this.gui.AddButton("x+4 yp w95 h21", "Clear Inspector")
         this.btnClearInspector.OnEvent("Click", (*) => this.ClearInspector())
 
@@ -2990,7 +2992,7 @@ class UIA_Inspector {
     ;  AI buttons — Find Unique / Ask AI
     ; ════════════════════════════════════════════
     /**
-     * Find Unique — send the UIA tree + selected element to OpenRouter and ask
+     * Find Unique — send the UIA tree + selected element to DeepSeek and ask
      * for a resilient AHK v2 UIA snippet that uniquely targets the element.
      * Only meaningful when _lastMatchCount > 1.
      */
@@ -3071,7 +3073,7 @@ class UIA_Inspector {
             this.sbMain.SetText("  AI suggestion appended to the editor — click Test to verify.")
         } catch Error as err {
             try busy.Destroy()
-            MsgBox("Find Unique failed:`n`n" err.Message, "OpenRouter error", "Iconx")
+            MsgBox("Find Unique failed:`n`n" err.Message, "DeepSeek error", "Iconx")
             this.sbMain.SetText(sbText)
         }
 
@@ -3489,7 +3491,7 @@ class UIA_Inspector {
     _OnExit(reason, code) {
         this._CleanupScintilla()
         PrefUI.SavePosition(this.gui.Hwnd)
-        try IniWrite(this.tipsDisabled, A_ScriptDir "\settings.ini", "Settings", "TipsDisabled")
+        try IniWrite(this.tipsDisabled, A_ScriptDir "\UIA_Inspector_settings.ini", "Settings", "TipsDisabled")
     }
 
     /**
@@ -3897,7 +3899,7 @@ _SciFilteredWmNotify(sciHwnd, origCb, wParam, lParam, msg, hwnd) {
  */
 class PrefUI
 {
-    static ini      := A_ScriptDir "\settings.ini"
+    static ini      := A_ScriptDir "\UIA_Inspector_settings.ini"
     static chkAOT   := ""
     static chkDeep  := ""
     static chkTips  := ""
@@ -3909,7 +3911,7 @@ class PrefUI
     static edtMaxTokens := ""
 
     ; Curated model list grouped loosely by provider. The control is an editable
-    ; ComboBox so users can type any OpenRouter model ID not in this list.
+    ; ComboBox so users can type any DeepSeek model ID not in this list.
     static ModelList := [
         "anthropic/claude-sonnet-4.5",
         "anthropic/claude-opus-4.1",
@@ -3924,7 +3926,7 @@ class PrefUI
         "google/gemini-2.5-flash",
         "google/gemini-2.0-flash",
         "meta-llama/llama-3.3-70b-instruct",
-        "deepseek/deepseek-chat",
+        "deepseek-v4-flash",
         "deepseek/deepseek-r1",
         "x-ai/grok-2",
         "mistralai/mistral-large"
@@ -3953,15 +3955,15 @@ class PrefUI
         PrefUI.chkPos   := g.AddCheckbox("x30 y+10 "     (pos   ? "+Checked" : "-Checked"), "Remember position")
         PrefUI.chkGuide := g.AddCheckbox("x+30 yp "      (guide ? "+Checked" : "-Checked"), "Guide Mode")
 
-        ; OpenRouter API key + model — stored in settings.ini under [OpenRouter]
-        apiKey := IniRead(PrefUI.ini, "OpenRouter", "api_key", "")
-        model  := IniRead(PrefUI.ini, "AI", "Model", "anthropic/claude-sonnet-4.5")
+        ; DeepSeek API key + model — stored in settings.ini under [DeepSeek]
+        apiKey := IniRead(PrefUI.ini, "DeepSeek", "api_key", "")
+        model  := IniRead(PrefUI.ini, "AI", "Model", "deepseek-v4-flash")
         maxTok := IniRead(PrefUI.ini, "AI", "MaxTokens", 2048)
-        g.AddGroupBox("xm w600 h150", "AI (OpenRouter)")
+        g.AddGroupBox("xm w600 h150", "AI (DeepSeek)")
         g.AddText("xp+20 yp+30 w80 right section", "Model:")
         PrefUI.cbModel := g.AddComboBox("x+6 yp-3 w320", PrefUI.ModelList)
         PrefUI.cbModel.Text := model
-        g.AddLink("xs w80 right", '<a href="https://openrouter.ai/keys">API Key:</a>')
+        g.AddLink("xs w80 right", '<a href="https://platform.deepseek.com/api_keys">API Key:</a>')
         PrefUI.edtApiKey  := g.AddEdit("x+6 yp-3 h30 w400 -multi Password", apiKey)
         PrefUI.chkShowKey := g.AddCheckbox("x+m yp+4", "Show")
         PrefUI.chkShowKey.OnEvent("Click", (*) => PrefUI._ToggleShowKey())
@@ -4005,11 +4007,11 @@ class PrefUI
         IniWrite(PrefUI.chkPos.Value,          PrefUI.ini, "Settings", "RememberPos")
         IniWrite(PrefUI.chkGuide.Value,        PrefUI.ini, "Settings", "GuideMode")
 
-        ; Persist the OpenRouter API key and refresh authorization so the next
+        ; Persist the DeepSeek API key and refresh authorization so the next
         ; Chat.Completions call picks up the new key without a restart.
         if PrefUI.edtApiKey {
             key := Trim(PrefUI.edtApiKey.Value)
-            IniWrite(key = "" ? " " : key, PrefUI.ini, "OpenRouter", "api_key")
+            IniWrite(key = "" ? " " : key, PrefUI.ini, "DeepSeek", "api_key")
             if key != "" {
                 try OpenRouter.Authenticate(key)
             } else {

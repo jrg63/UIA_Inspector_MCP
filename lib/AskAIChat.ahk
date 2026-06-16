@@ -109,7 +109,7 @@ class AskAIChat
 
         ; Build messages array
         systemPrompt :=
-          "You are an AHK v2 UIA expert embedded inside the UIA Inspector, targeting the Descolada UIA-v2 library (S:\lib\v2\UIA2\UIA\UIA.ahk).`n"
+          "You are an AHK v2 UIA expert embedded inside the UIA Inspector, targeting the Descolada UIA-v2 library (UIA.ahk).`n"
         . "You receive authoritative context: the selected element's properties, its window info, the available UIA patterns, and a slice of the UIA tree. Use that data as ground truth.`n`n"
         . "When producing code, follow these API rules EXACTLY:`n"
         . "  - Use FindFirst(condition [, matchMode, scope])  and  FindAll(condition [, matchMode, scope])[index].`n"
@@ -178,26 +178,25 @@ class AskAIChat
 }
 
 ; ══════════════════════════════════════════════════
-;  Shared OpenRouter caller — used by both the Ask AI
+;  Shared DeepSeek caller — used by both the Ask AI
 ;  chat and the Find Unique one-shot.
 ;  Returns the assistant's text content. Throws on any
 ;  error (HTTP / JSON / missing key).
 ; ══════════════════════════════════════════════════
 CallOpenRouter(model, messages)
 {
-    ; Authenticate from the inspector's own settings.ini — [OpenRouter] api_key.
+    ; Authenticate from the inspector's own settings.ini — [DeepSeek] api_key.
     if !OpenRouter.authorized
     {
-        apiKey := IniRead(A_ScriptDir "\settings.ini", "OpenRouter", "api_key", "")
+        apiKey := IniRead(A_ScriptDir "\UIA_Inspector_settings.ini", "DeepSeek", "api_key", "")
         if apiKey = ""
-            throw Error("No OpenRouter API key configured.`n`nOpen Preferences and paste your key into the 'OpenRouter API Key' field.")
-        OpenRouter.Authenticate(apiKey)
+            throw Error("No DeepSeek API key configured.`n`nOpen Preferences and paste your key into the 'API Key' field.")
+        if !OpenRouter.Authenticate(apiKey)
+            throw Error("DeepSeek authentication failed. Check that your API key in Preferences is correct.`n`nGet a key at https://platform.deepseek.com/api_keys")
     }
 
-    ; Cap max_tokens so OpenRouter doesn't reserve a huge budget against the key's
-    ; per-request credit limit (default models advertise 200k+ output, which blows
-    ; the budget even when the actual reply will be short).
-    maxTokens := IniRead(A_ScriptDir "\settings.ini", "AI", "MaxTokens", 2048) + 0
+    ; Cap max_tokens to control costs.
+    maxTokens := IniRead(A_ScriptDir "\UIA_Inspector_settings.ini", "AI", "MaxTokens", 2048) + 0
     if maxTokens <= 0
         maxTokens := 2048
 
@@ -206,7 +205,7 @@ CallOpenRouter(model, messages)
 
     if !response.HasProp("choices")
     {
-        msg := "OpenRouter returned no choices."
+        msg := "DeepSeek returned no choices."
         if response.HasProp("error") {
             try msg .= "`n" response.error["message"]
         }

@@ -169,14 +169,14 @@ class Scintilla extends Gui.Custom {
     Static __New(scint_path?, custom_lexer?) {                                                        ; Need to do it this way.
         Gui.Prototype.AddScintilla := ObjBindMethod(this,"AddScintilla")    ; Multiple gui subclass extensions don't play well together.
         
-        scint_path := scint_path ?? A_LineFile "\..\Scintilla.dll" ; Set this as needed.
+        scint_path := scint_path ?? (IsSet(UIAI_LibPath) ? UIAI_LibPath "\Scintilla\Scintilla.dll" : A_LineFile "\..\Scintilla.dll")
         
         If !(this.hModule := DllCall("LoadLibrary", "Str", scint_path, "UPtr")) {    ; load dll, make sure it works
             MsgBox "Scintilla DLL not found.`n`nModify the path to the appropriate location for your script.`n" 
             return
         }
         
-        custom_lexer := custom_lexer ?? A_LineFile "\..\CustomLexer.dll" ; change this path as needed (if you choose to move the DLL)
+        custom_lexer := custom_lexer ?? (IsSet(UIAI_LibPath) ? UIAI_LibPath "\Scintilla\CustomLexer.dll" : A_LineFile "\..\CustomLexer.dll")
         If !DllCall("LoadLibrary", "Str", custom_lexer, "UPtr") {
             Msgbox "CustomLexer.dll not found."
             return
