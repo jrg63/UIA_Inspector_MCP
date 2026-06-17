@@ -1,0 +1,112 @@
+{
+    "name": "vscode-uia-mcp",
+    "displayName": "UIA Inspector MCP",
+    "description": "MCP server for Windows UI Automation inspection — lets LLMs interrogate desktop UIs and generate AHK v2 automation code",
+    "version": "0.1.0",
+    "publisher": "jrg63",
+    "license": "MIT",
+    "icon": "icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jrg63/UIA_Inspector"
+    },
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Machine Learning",
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "mcpServerDefinitionProviders": [
+            {
+                "id": "uia-inspector-mcp",
+                "label": "UIA Inspector"
+            }
+        ],
+        "commands": [
+            {
+                "command": "uia-mcp.startEngine",
+                "title": "Start UIA MCP Engine"
+            },
+            {
+                "command": "uia-mcp.stopEngine",
+                "title": "Stop UIA MCP Engine"
+            },
+            {
+                "command": "uia-mcp.restartEngine",
+                "title": "Restart UIA MCP Engine"
+            },
+            {
+                "command": "uia-mcp.showEngineStatus",
+                "title": "Show UIA MCP Engine Status"
+            },
+            {
+                "command": "uia-mcp.inspectAtCursor",
+                "title": "Inspect Element Under Cursor"
+            }
+        ],
+        "configuration": {
+            "title": "UIA Inspector MCP",
+            "properties": {
+                "uia-mcp.ahkEnginePath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to AutoHotkey64.exe. Leave empty to auto-detect."
+                },
+                "uia-mcp.engineScriptPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to UIA_MCP_Engine.ahk. Leave empty to use the bundled copy."
+                },
+                "uia-mcp.enginePort": {
+                    "type": "number",
+                    "default": 9876,
+                    "description": "TCP port for the AHK UIA engine."
+                },
+                "uia-mcp.autoLaunch": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Automatically start the AHK engine when VS Code opens."
+                },
+                "uia-mcp.engineIdleTimeout": {
+                    "type": "number",
+                    "default": 300,
+                    "description": "Seconds of inactivity before the AHK engine shuts down."
+                },
+                "uia-mcp.logLevel": {
+                    "type": "string",
+                    "default": "info",
+                    "enum": ["none", "error", "info", "debug"],
+                    "description": "Log verbosity: none, error, info, or debug."
+                },
+                "uia-mcp.inspectHotkey": {
+                    "type": "string",
+                    "default": "^+I",
+                    "description": "AHK global hotkey to inspect element under cursor from any app. Format: ^=Ctrl, +=Shift, !=Alt, #=Win. Example: ^+I = Ctrl+Shift+I."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "node esbuild.config.mjs",
+        "compile": "node esbuild.config.mjs",
+        "watch": "node esbuild.config.mjs --watch",
+        "typecheck": "tsc --noEmit -p ./",
+        "test": "jest --no-coverage",
+        "test:coverage": "jest --coverage"
+    },
+    "devDependencies": {
+        "@types/jest": "^30.0.0",
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.90.0",
+        "esbuild": "^0.24.0",
+        "jest": "^30.4.2",
+        "ts-jest": "^29.4.11",
+        "typescript": "^5.4.0"
+    }
+}

@@ -1,2 +1,17 @@
+# ── Build artifacts ─────────────────────────────
 UIA_Inspector_settings.ini
 includes.txt
+*.exe
+
+# ── VS Code extension ───────────────────────────
+/vscode-uia-mcp/node_modules
+/vscode-uia-mcp/out
+/vscode-uia-mcp/coverage
+*.vsix
+
+# ── Editor / OS ─────────────────────────────────
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db

@@ -1,0 +1,10 @@
+.vscode/**
+src/**
+node_modules/**
+coverage/**
+.git/**
+tsconfig.json
+esbuild.config.mjs
+jest.config.js
+.gitignore
+*.vsix
