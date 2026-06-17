@@ -3071,6 +3071,7 @@ class UIA_Inspector {
             try busy.Destroy()
             this._AppendAISuggestion(reply)
             this.sbMain.SetText("  AI suggestion appended to the editor — click Test to verify.")
+
         } catch Error as err {
             try busy.Destroy()
             MsgBox("Find Unique failed:`n`n" err.Message, "DeepSeek error", "Iconx")

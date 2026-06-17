@@ -183,7 +183,7 @@ class OpenRouter {
 			}
 
 			OutputDebug 'creating the completions request`n'
-			res := OpenRouter.Request('POST', 'completions',, body)
+			res := OpenRouter.Request('POST', 'completions', Map(), body)
 			; OutputDebug 'raw response text: ' res.ResponseText '`n'
 
 			OutputDebug 'parsing the response`n'
@@ -249,14 +249,14 @@ class OpenRouter {
 				}
 
 				OutputDebug 'creating the completions request`n'
-				res := OpenRouter.Request('POST', 'chat/completions',, body)
+				res := OpenRouter.Request('POST', 'chat/completions', Map(), body)
 				; OutputDebug 'raw response text: ' res.ResponseText '`n'
 
 				OutputDebug 'creating the completions request`n'
 				OutputDebug 'parsing the response`n'
 				for key, val in JSON.Parse(res.ResponseText)
 				{
-					OutputDebug 'setting property ' key ' to ' val '`n'
+					OutputDebug 'setting property ' key ' (type: ' Type(val) ')`n'
 					this.%key% := val
 				}
 
