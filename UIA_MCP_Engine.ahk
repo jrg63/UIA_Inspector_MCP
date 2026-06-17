@@ -10,9 +10,10 @@ DetectHiddenWindows true
 ; hotkeys — pure headless engine for the VS Code UIA MCP extension.
 ;
 ; Usage:
-;   AutoHotkey64.exe UIA_MCP_Engine.ahk [--port PORT] [--idle-timeout SECONDS]
+;   AutoHotkey64.exe UIA_MCP_Engine.ahk [--port PORT] [--idle-timeout SECONDS] [--log-level LEVEL]
 ;
-; Defaults:  port=9876  idle-timeout=300
+; Defaults:  port=9876  idle-timeout=300  log-level=info
+; Log levels: none, error, info, debug
 ; ══════════════════════════════════════════════════════════════════
 
 #Include <UIA>
@@ -25,6 +26,9 @@ JSON.BoolsAsInts := 0
 ; ── Configuration ─────────────────────────────
 global ENGINE_PORT      := 9876
 global IDLE_TIMEOUT_MS  := 300000   ; 5 minutes
+global LOG_LEVEL        := 1        ; 0=none 1=error 2=info 3=debug
+global INSPECT_HOTKEY   := "^+I"    ; Ctrl+Shift+I
+global LOG_FILE         := A_Temp "\UIA_MCP_Engine.log"
 global PORT_FILE         := A_Temp "\UIA_MCP_Engine.port"
 
 ; Parse command-line args
@@ -33,6 +37,33 @@ for i, arg in A_Args {
         ENGINE_PORT := Integer(A_Args[i + 1])
     if arg = "--idle-timeout" && A_Args.Has(i + 1)
         IDLE_TIMEOUT_MS := Integer(A_Args[i + 1]) * 1000
+    if arg = "--inspect-hotkey" && A_Args.Has(i + 1)
+        INSPECT_HOTKEY := A_Args[i + 1]
+    if arg = "--log-file" && A_Args.Has(i + 1)
+        LOG_FILE := A_Args[i + 1]
+    if arg = "--log-level" && A_Args.Has(i + 1) {
+        switch A_Args[i + 1], 0 {
+            case "none":  LOG_LEVEL := 0
+            case "error": LOG_LEVEL := 1
+            case "info":  LOG_LEVEL := 2
+            case "debug": LOG_LEVEL := 3
+        }
+    }
+}
+
+; ══════════════════════════════════════════════════════════════════
+;  Logging — writes to disk file AND stderr
+; ══════════════════════════════════════════════════════════════════
+
+_Log(level, msg) {
+    if level > LOG_LEVEL
+        return
+    static labels := ["NONE", "ERROR", "INFO ", "DEBUG"]
+    label := labels[level + 1]
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    line := Format("[{}] {} {}`n", ts, label, msg)
+    try FileAppend(line, LOG_FILE)   ; persistent log on disk
+    try FileAppend(line, "*")        ; also stderr for daemon capture
 }
 
 ; ══════════════════════════════════════════════════════════════════
@@ -79,6 +110,7 @@ _RpcError(id, code, message, data := "") {
  * Pre-loads ~22 element properties + ~13 Is*PatternAvailable flags.
  */
 _MakeCacheRequest() {
+    global UIA, UIA_TreeScope
     cr := UIA.CreateCacheRequest()
     cr.TreeScope := UIA_TreeScope.Subtree
     for propId in [30002, 30003, 30004, 30005, 30006, 30007, 30009,
@@ -97,6 +129,7 @@ _MakeCacheRequest() {
  * Mirrors the property list used in UIA_Inspector's PopulateProperties.
  */
 _ElementToMap(el) {
+    global UIA
     m := Map()
     m["Type"]           := _PropStr(el, 30003)
     m["LocalizedType"]   := _PropStr(el, 30004)
@@ -324,6 +357,7 @@ _ResolveMatchMode(mode) {
  * Returns array of element summary objects, root-first.
  */
 _GetAncestorChain(el) {
+    global UIA
     chain := []
     try {
         walker := UIA.TreeWalkerTrue
@@ -393,6 +427,7 @@ _WalkTree(el, selectedEl, depth, maxDepth, &out) {
  * each with optional sub-properties (e.g. ToggleState, Value).
  */
 _GetPatterns(el) {
+    global UIA
     patterns := []
     ; Invoke
     try {
@@ -654,13 +689,16 @@ _ResolveLocator(locator) {
  * Returns full element info at the mouse cursor position.
  */
 _HandleInspectAtCursor(params) {
+    global UIA
     CoordMode("Mouse", "Screen")
     MouseGetPos(&mX, &mY, &winUnderMouse)
     if !winUnderMouse
         throw Error("No window under cursor")
+    _Log(3, "InspectAtCursor: mouse at (" mX "," mY ") hwnd=0x" Format("{:X}", winUnderMouse))
 
     ; Check elevation
     targetPid := WinGetPID("ahk_id " winUnderMouse)
+    _Log(3, "InspectAtCursor: targetPid=" targetPid)
     elevated := _IsElevated(targetPid)
     if elevated && !A_IsAdmin {
         return {
@@ -677,11 +715,57 @@ _HandleInspectAtCursor(params) {
             UIA.ActivateChromiumAccessibility(winUnderMouse)
     }
 
+    _Log(3, "InspectAtCursor: building cache request...")
     cr := _MakeCacheRequest()
+    _Log(3, "InspectAtCursor: getting window element from handle...")
     windowEl := UIA.ElementFromHandle(winUnderMouse, cr)
-    el := UIA.ElementFromPoint(mX, mY)
 
-    return _BuildFullElementResult(el, windowEl, winUnderMouse, targetPid)
+    _Log(3, "InspectAtCursor: calling ElementFromPoint...")
+    el := 0
+    try {
+        el := UIA.ElementFromPoint(mX, mY)
+    } catch as err {
+        ; Chromium browsers, GPU-rendered surfaces, and some
+        ; overlays don't expose UIA at the pixel level.
+        return {
+            error: true,
+            message: "Element at cursor not accessible via UIA: " err.Message,
+            hint: "Try hovering over a different window (not a browser). "
+                . "Chromium-based browsers (Edge, Chrome) do not expose "
+                . "tab-level or page-level elements to UIA via point query.",
+            x: mX,
+            y: mY,
+            hwnd: Format("0x{:X}", winUnderMouse),
+            targetName: ProcessGetName(targetPid)
+        }
+    }
+
+    ; Fallback: raw COM IUIAutomation call for custom UI frameworks
+    if !el {
+        try {
+            automation := UIA.IUIAutomation
+            pt := Buffer(8, 0)
+            NumPut("Int", mX, "Int", mY, pt)
+            elPtr := 0
+            ComCall(7, automation, "int", "ptr", pt, "ptr*", &elPtr)
+            if elPtr
+                el := UIA.IUIAutomationElement(elPtr)
+        }
+    }
+
+    if !el
+        return {
+            error: true,
+            message: "UIA.ElementFromPoint returned nothing at (" mX "," mY ")",
+            x: mX, y: mY,
+            hwnd: Format("0x{:X}", winUnderMouse),
+            targetName: ProcessGetName(targetPid)
+        }
+
+    _Log(3, "InspectAtCursor: element found, building full result...")
+    result := _BuildFullElementResult(el, windowEl, winUnderMouse, targetPid)
+    _Log(3, "InspectAtCursor: done, Type=" (result.HasProp("Type") ? result["Type"] : "?"))
+    return result
 }
 
 /**
@@ -1054,6 +1138,7 @@ _HandleGetElementAtPoint(params) {
 ; ══════════════════════════════════════════════════════════════════
 
 _BuildFullElementResult(el, windowEl, hwnd, targetPid) {
+    global UIA
     props := _ElementToMap(el)
     patterns := _GetPatterns(el)
     ancestors := _GetAncestorChain(el)
@@ -1089,6 +1174,7 @@ _HandleRequest(jsonStr) {
     request := ""
     try request := JSON.Parse(jsonStr)
     catch {
+        _Log(1, "JSON parse error: " SubStr(jsonStr, 1, 200))
         return _RpcError("", -32700, "Parse error")
     }
 
@@ -1100,6 +1186,7 @@ _HandleRequest(jsonStr) {
     static handlers := Map(
         "ping",                  (*) => "pong",
         "inspect_at_cursor",    _HandleInspectAtCursor,
+        "inspect_element_at_cursor", _HandleInspectAtCursor,  ; MCP bridge name
         "get_focused_element",  _HandleGetFocusedElement,
         "find_element",         _HandleFindElement,
         "find_all_elements",    _HandleFindAllElements,
@@ -1118,18 +1205,24 @@ _HandleRequest(jsonStr) {
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )
 
-    if !handlers.Has(method)
+    if !handlers.Has(method) {
+        _Log(1, "Method not found: " method)
         return _RpcError(id, -32601, "Method not found: " method)
+    }
 
     try {
+        _Log(3, "Dispatching: " method)
         result := handlers[method](params)
+        _Log(3, "Completed: " method)
         return _RpcResult(id, result)
     } catch as err {
+        _Log(1, "Handler error [" method "]: " err.Message . (err.HasProp("What") ? " (" err.What ")" : ""))
         return _RpcError(id, -32000, err.Message, err.HasProp("What") ? err.What : "")
     }
 }
 
 _DoShutdown(*) {
+    _Log(2, "Shutting down")
     FileDelete(PORT_FILE)
     try DllCall("Ws2_32\WSACleanup")
     ExitApp()
@@ -1146,6 +1239,7 @@ global serverBound := false
 ; Write port file so the extension can find us
 try FileDelete(PORT_FILE)
 FileAppend("127.0.0.1:" ENGINE_PORT "`n" ProcessExist(), PORT_FILE)
+_Log(2, "Engine PID=" ProcessExist() " starting on port " ENGINE_PORT)
 
 ; Create listening socket
 _OnAccept := _SocketOnAccept
@@ -1176,6 +1270,7 @@ try {
     ; Listen
     DllCall("Ws2_32\listen", "Ptr", srv, "Int", 1)
     serverBound := true
+    _Log(2, "TCP server bound to 127.0.0.1:" ENGINE_PORT)
 } catch as err {
     OutputDebug "UIA_MCP_Engine: FATAL — " err.Message "`n"
     ; Write error to port file so the extension can detect the failure
@@ -1191,8 +1286,85 @@ DllCall("Ws2_32\WSAAsyncSelect", "Ptr", srv, "Ptr", A_ScriptHwnd, "UInt", 0x8000
 ; Idle timeout checker
 SetTimer(_CheckIdle, 10000)
 
-; Hide tray icon for headless operation
-A_IconHidden := true
+; ── Global inspect-at-cursor hotkey ───────────
+; Register with :: syntax for full global access (Hotkey() callbacks
+; have restricted scoping in AHK v2). Default: Ctrl+Shift+Alt+I.
+; Override with --inspect-hotkey on the command line.
+
+; We use Hotkey() to register a dynamically-configured key, but the
+; handler must be a :: label-style function registered separately
+; to avoid AHK v2 scoping restrictions.  The _InspectHotkeyHandler
+; function delegates to _HandleInspectAtCursor — the same rich
+; pipeline used by JSON-RPC.
+_InspectHotkeyHandler(*) {
+    global _lastActivity
+    _lastActivity := A_TickCount
+    try {
+        result := _HandleInspectAtCursor({})
+    } catch as err {
+        _Log(1, "Hotkey error: " err.Message)
+        ToolTip("UIA inspect failed: " err.Message)
+        SetTimer(() => ToolTip(), -3000)
+        return
+    }
+    ; Handle graceful error objects
+    isMap := (result is Map)
+    if IsObject(result) && ((isMap && result.Has("error")) || (!isMap && result.HasProp("error"))) && result["error"] {
+        msg := isMap ? result["message"] : result.HasProp("message") ? result.message : ""
+        ToolTip(msg || "Not accessible")
+        SetTimer(() => ToolTip(), -3000)
+        return
+    }
+    ; Show result tooltip with full element info
+    try {
+        elType   := isMap ? (result.Has("LocalizedType") ? result["LocalizedType"] : result.Has("Type") ? result["Type"] : "") : ""
+        elName   := isMap ? (result.Has("Name") ? result["Name"] : "") : ""
+        elClass  := isMap ? (result.Has("ClassName") ? result["ClassName"] : "") : ""
+        elAction := isMap ? (result.Has("InferredAction") ? result["InferredAction"] : "") : ""
+        winTitle := isMap ? (result.Has("WindowTitle") ? result["WindowTitle"] : "") : ""
+
+        if elType = ""
+            elType := "?"
+        if elName = ""
+            elName := "(no name)"
+        if elClass = ""
+            elClass := "?"
+
+        summary := ""
+        if winTitle
+            summary .= "Window: " winTitle "`n"
+        summary .= Format("{} `"{}`"`nClass: {}", elType, elName, elClass)
+        if elAction
+            summary .= "`nAction: " elAction
+        ToolTip(summary, , , 3)
+        ToolTip(summary, , , 3)
+        SetTimer(() => ToolTip(), -5000)
+
+        try A_Clipboard := JSON.Stringify(result, 4)
+        _Log(3, "Hotkey inspect: " elType " " elName)
+    } catch as err2 {
+        _Log(1, "Hotkey display error: " err2.Message)
+    }
+}
+
+Hotkey(INSPECT_HOTKEY, _InspectHotkeyHandler, "On")
+_Log(2, "Inspect hotkey registered: " INSPECT_HOTKEY)
+
+; Keep tray icon visible so the user knows the engine is running.
+
+_JoinPatterns(patterns) {
+    if !IsObject(patterns) || !patterns.Length
+        return "none"
+    list := ""
+    for i, p in patterns {
+        if i > 1
+            list .= ", "
+        list .= p.name
+        if p.HasProp("isReadOnly")
+            list .= p.isReadOnly ? "(RO)" : "(RW)"
+    }
+    return list
+}
 
 ; Announce ready
 OutputDebug "UIA_MCP_Engine: listening on 127.0.0.1:" ENGINE_PORT "`n"
@@ -1219,6 +1391,7 @@ _SocketOnAccept(wp, lp, msg, hwnd) {
     _clientSock := DllCall("Ws2_32\accept", "Ptr", srv, "Ptr", 0, "Ptr", 0, "Ptr")
     if _clientSock = -1
         return
+    _Log(3, "Client connected")
 
     _recvBuf := ""
     _lastActivity := A_TickCount

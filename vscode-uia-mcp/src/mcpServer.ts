@@ -1,9 +1,48 @@
 import * as vscode from "vscode";
+import * as path from "path";
+import * as fs from "fs";
+import * as os from "os";
 import { AhkDaemonManager } from "./ahkDaemon";
 import { TOOL_NAMES, ToolName, buildToolDefinitions } from "./toolDefinitions";
 
 const SERVER_ID = "uia-inspector-mcp";
 const SERVER_NAME = "UIA Inspector";
+
+/**
+ * Find a real Node.js executable.
+ *
+ * On Windows, process.execPath is the Electron binary (Code.exe), which can't
+ * run arbitrary .js scripts.  We need the actual node binary.
+ */
+function findNodeExe(): string {
+    // 1) VS Code's bundled node (Windows: alongside Code.exe)
+    const execDir = path.dirname(process.execPath);
+    const bundled = process.platform === "win32"
+        ? path.join(execDir, "node.exe")
+        : path.join(execDir, "node");
+    if (fs.existsSync(bundled)) {
+        return bundled;
+    }
+
+    // 2) Electron's built-in Node (ships as a helper binary in some versions)
+    //    e.g. alongside the framework .dll on macOS
+    if (process.platform === "darwin") {
+        const frameworkNode = path.join(
+            execDir,
+            "..",
+            "Frameworks",
+            "Electron Framework.framework",
+            "Helpers",
+            "node"
+        );
+        if (fs.existsSync(frameworkNode)) {
+            return frameworkNode;
+        }
+    }
+
+    // 3) "node" from PATH — the common case for Windows dev machines
+    return "node";
+}
 
 const CODE_GEN_INSTRUCTIONS = `## AHK v2 UIA Automation Code Generation
 
@@ -121,87 +160,80 @@ export class UiaMcpServer {
     ) {}
 
     /**
-     * Register the MCP server with VS Code.
-     * Uses the vscode.lm.registerMcpServerDefinitionProvider API if available,
-     * or falls back to the lm.tools contribution point.
+     * Register via the VS Code MCP API using a stdio bridge.
+     * VS Code spawns `node out/mcpBridge.js` which forwards MCP JSON-RPC
+     * from stdin/stdout to our AHK engine over TCP.
      */
     register(context: vscode.ExtensionContext): void {
         this.output.appendLine("Registering UIA MCP server...");
 
-        // Check for VS Code MCP API availability
-        const api = (vscode as any).lm;
-        if (api && typeof api.registerMcpServerDefinitionProvider === "function") {
-            this.registerViaApi(context);
-        } else {
-            this.output.appendLine(
-                "MCP API not available — using tool-based registration."
+        try {
+            const api = (vscode as any).lm;
+            if (!api || typeof api.registerMcpServerDefinitionProvider !== "function") {
+                this.output.appendLine(
+                    "lm.registerMcpServerDefinitionProvider not available — VS Code too old."
+                );
+                return;
+            }
+
+            const bridgePath = vscode.Uri.joinPath(
+                context.extensionUri,
+                "out",
+                "mcpBridge.js"
             );
-            this.registerToolsDirectly(context);
+
+            const nodeExe = findNodeExe();
+            this.output.appendLine(`MCP bridge node: ${nodeExe}`);
+            this.output.appendLine(`MCP bridge script: ${bridgePath.fsPath}`);
+
+            // McpStdioServerDefinition may be on vscode or vscode.lm depending
+            // on VS Code version.  The constructor requires (label, command,
+            // args?, env?, version?) — NOT property assignment.
+            const McpDefClass: any =
+                (vscode as any).McpStdioServerDefinition ??
+                (vscode as any).lm?.McpStdioServerDefinition;
+
+            // Cache the definition — VS Code may call provideMcpServerDefinitions
+            // multiple times.  Creating a new definition each time triggers
+            // tool re-registration, which causes "tools disabled" after a
+            // few calls.  We create it once and return the same instance.
+            let cachedDef: any = null;
+
+            const provider = {
+                provideMcpServerDefinitions: (_token: vscode.CancellationToken) => {
+                    if (!McpDefClass) { return []; }
+                    if (!cachedDef) {
+                        const cfg = vscode.workspace.getConfiguration("uia-mcp");
+                        const logLevel = cfg.get<string>("logLevel", "info") ?? "info";
+                        const port = cfg.get<number>("enginePort", 9876) ?? 9876;
+                        cachedDef = new McpDefClass(
+                            "UIA Inspector",
+                            nodeExe,
+                            [bridgePath.fsPath],
+                            {
+                                UIA_MCP_PORT: String(port),
+                                UIA_MCP_LOG_LEVEL: logLevel,
+                                UIA_MCP_LOG_FILE: path.join(os.tmpdir(), "UIA_MCP_Bridge.log"),
+                            }
+                        );
+                        this.output.appendLine("MCP server definition created (cached).");
+                    }
+                    return [cachedDef];
+                },
+            };
+
+            context.subscriptions.push(
+                api.registerMcpServerDefinitionProvider(SERVER_ID, provider)
+            );
+
+            this.output.appendLine(
+                `MCP server "${SERVER_ID}" registered via stdio bridge.`
+            );
+        } catch (err: any) {
+            this.output.appendLine(
+                `MCP registration failed: ${err.message}`
+            );
         }
-    }
-
-    /**
-     * Register via the VS Code MCP server definition provider API.
-     */
-    private registerViaApi(context: vscode.ExtensionContext): void {
-        const api = (vscode as any).lm;
-
-        const provider = {
-            provideMcpServerDefinitions: () => {
-                return [
-                    {
-                        id: SERVER_ID,
-                        name: SERVER_NAME,
-                        description:
-                            "Windows UI Automation inspector — interrogate desktop UIs, find selectors, generate AHK v2 code",
-                        tools: this.getToolDefinitions(),
-                        instructions: CODE_GEN_INSTRUCTIONS,
-                        // Bridge: when a tool is invoked, call our handler
-                        invokeTool: async (name: string, params: Record<string, any>) => {
-                            return this.handleToolCall(name, params);
-                        },
-                    },
-                ];
-            },
-        };
-
-        context.subscriptions.push(
-            api.registerMcpServerDefinitionProvider(provider)
-        );
-
-        this.output.appendLine(
-            `MCP server "${SERVER_ID}" registered via API.`
-        );
-    }
-
-    /**
-     * Handle a tool invocation from the LLM via MCP.
-     * Bridges the call to the AHK engine daemon.
-     */
-    async handleToolCall(
-        toolName: string,
-        params: Record<string, any>
-    ): Promise<any> {
-        this.output.appendLine(
-            `Tool call: ${toolName}(${JSON.stringify(params)})`
-        );
-
-        // Validate tool name
-        if (!(TOOL_NAMES as readonly string[]).includes(toolName)) {
-            throw new Error(`Unknown tool: ${toolName}`);
-        }
-
-        // Forward to the AHK engine
-        return this.daemon.sendCommand(toolName, params);
-    }
-
-    /**
-     * Fallback: register LM tools directly for Copilot Chat.
-     */
-    private registerToolsDirectly(context: vscode.ExtensionContext): void {
-        this.output.appendLine(
-            "Direct tool registration not fully implemented — MCP API is the primary path."
-        );
     }
 
     /**

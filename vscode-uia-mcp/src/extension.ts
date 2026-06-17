@@ -22,7 +22,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand("uia-mcp.startEngine", () => daemon.start()),
         vscode.commands.registerCommand("uia-mcp.stopEngine", () => daemon.stop()),
         vscode.commands.registerCommand("uia-mcp.restartEngine", () => daemon.restart()),
-        vscode.commands.registerCommand("uia-mcp.showEngineStatus", () => daemon.showStatus())
+        vscode.commands.registerCommand("uia-mcp.showEngineStatus", () => daemon.showStatus()),
+        vscode.commands.registerCommand("uia-mcp.inspectAtCursor", () => inspectAtCursor(daemon, outputChannel))
     );
 
     // ── Status bar ─────────────────────────────
@@ -83,4 +84,49 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
     daemon?.stop();
     mcpServer?.dispose();
+}
+
+// ── inspectAtCursor command ────────────────────
+// Bound to a user hotkey; sends the cursor position
+// to the AHK engine and shows the result inline.
+
+async function inspectAtCursor(
+    daemon: AhkDaemonManager,
+    output: vscode.OutputChannel
+) {
+    if (daemon.getState() !== "running") {
+        vscode.window.showWarningMessage("UIA MCP engine not running. Start it first.");
+        return;
+    }
+    try {
+        const result = await daemon.sendCommand("inspect_element_at_cursor", {});
+        const text = JSON.stringify(result, null, 2);
+        output.appendLine(`[inspectAtCursor] ${text}`);
+
+        if (result.error) {
+            // Graceful engine error (e.g. browser element not UIA-accessible)
+            vscode.window.showWarningMessage(
+                `UIA: ${result.message || "Not accessible"}`,
+                { modal: false, detail: text },
+                "Copy"
+            ).then((choice) => {
+                if (choice === "Copy") {
+                    vscode.env.clipboard.writeText(text);
+                }
+            });
+            return;
+        }
+
+        vscode.window.showInformationMessage(
+            `Element: ${result.Type || "?"} "${result.Name || ""}"`,
+            { modal: false, detail: text },
+            "Copy"
+        ).then((choice) => {
+            if (choice === "Copy") {
+                vscode.env.clipboard.writeText(text);
+            }
+        });
+    } catch (err: any) {
+        vscode.window.showErrorMessage(`UIA inspect failed: ${err.message}`);
+    }
 }

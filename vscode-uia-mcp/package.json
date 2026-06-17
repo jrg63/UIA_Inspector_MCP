@@ -5,6 +5,10 @@
     "version": "0.1.0",
     "publisher": "jrg63",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jrg63/UIA_Inspector"
+    },
     "engines": {
         "vscode": "^1.90.0"
     },
@@ -16,6 +20,12 @@
     ],
     "main": "./out/extension.js",
     "contributes": {
+        "mcpServerDefinitionProviders": [
+            {
+                "id": "uia-inspector-mcp",
+                "label": "UIA Inspector"
+            }
+        ],
         "commands": [
             {
                 "command": "uia-mcp.startEngine",
@@ -32,6 +42,10 @@
             {
                 "command": "uia-mcp.showEngineStatus",
                 "title": "Show UIA MCP Engine Status"
+            },
+            {
+                "command": "uia-mcp.inspectAtCursor",
+                "title": "Inspect Element Under Cursor"
             }
         ],
         "configuration": {
@@ -61,14 +75,26 @@
                     "type": "number",
                     "default": 300,
                     "description": "Seconds of inactivity before the AHK engine shuts down."
+                },
+                "uia-mcp.logLevel": {
+                    "type": "string",
+                    "default": "info",
+                    "enum": ["none", "error", "info", "debug"],
+                    "description": "Log verbosity: none, error, info, or debug."
+                },
+                "uia-mcp.inspectHotkey": {
+                    "type": "string",
+                    "default": "^+I",
+                    "description": "AHK global hotkey to inspect element under cursor from any app. Format: ^=Ctrl, +=Shift, !=Alt, #=Win. Example: ^+I = Ctrl+Shift+I."
                 }
             }
         }
     },
     "scripts": {
-        "vscode:prepublish": "tsc -p ./",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
+        "vscode:prepublish": "node esbuild.config.mjs",
+        "compile": "node esbuild.config.mjs",
+        "watch": "node esbuild.config.mjs --watch",
+        "typecheck": "tsc --noEmit -p ./",
         "test": "jest --no-coverage",
         "test:coverage": "jest --coverage"
     },
@@ -76,11 +102,9 @@
         "@types/jest": "^30.0.0",
         "@types/node": "^20.0.0",
         "@types/vscode": "^1.90.0",
+        "esbuild": "^0.24.0",
         "jest": "^30.4.2",
         "ts-jest": "^29.4.11",
         "typescript": "^5.4.0"
-    },
-    "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.0.0"
     }
 }

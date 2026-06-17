@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as net from "net";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import { spawn, ChildProcess } from "child_process";
 import { findAhkExe, findEngineScript, getPortFile } from "./pathResolver";
 
@@ -84,9 +85,10 @@ export class AhkDaemonManager {
         try {
             const ahkExe = this.findAhkExe();
             const scriptPath = this.findEngineScript();
-            const idleTimeout = vscode.workspace
-                .getConfiguration("uia-mcp")
-                .get<number>("engineIdleTimeout", 300) ?? 300;
+            const cfg = vscode.workspace.getConfiguration("uia-mcp");
+            const idleTimeout = cfg.get<number>("engineIdleTimeout", 300) ?? 300;
+            const logLevel = cfg.get<string>("logLevel", "info") ?? "info";
+            const inspectHotkey = cfg.get<string>("inspectHotkey", "^+I") ?? "^+I";
 
             this.output.appendLine(`AHK: ${ahkExe}`);
             this.output.appendLine(`Script: ${scriptPath}`);
@@ -106,6 +108,12 @@ export class AhkDaemonManager {
                 String(this.port),
                 "--idle-timeout",
                 String(idleTimeout),
+                "--log-level",
+                logLevel,
+                "--inspect-hotkey",
+                inspectHotkey,
+                "--log-file",
+                path.join(os.tmpdir(), "UIA_MCP_Engine.log"),
             ], {
                 stdio: ["ignore", "pipe", "pipe"],
                 windowsHide: true,
@@ -170,19 +178,20 @@ export class AhkDaemonManager {
         if (this.process) {
             this.output.appendLine("Stopping AHK engine...");
             this.stopHealthCheck();
+            const oldProc = this.process;
 
             try {
-                // Try graceful shutdown first
                 await this.sendCommand("shutdown", {});
             } catch (_) {
                 /* engine may already be down */
             }
 
-            // Force kill if still running
+            // Force kill if still alive after 3s.
+            // exitCode is null while running; set when process exits.
             setTimeout(() => {
-                if (this.process) {
+                if (oldProc && oldProc.exitCode === null) {
                     this.output.appendLine("Force-killing engine.");
-                    this.process.kill();
+                    oldProc.kill();
                 }
             }, 3000);
         }

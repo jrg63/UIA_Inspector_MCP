@@ -59,6 +59,7 @@ export function findEngineScript(
 
     const candidates = [
         ...workspaceFolders.map((ws) => path.join(ws, "UIA_MCP_Engine.ahk")),
+        path.join(extensionPath, "..", "UIA_MCP_Engine.ahk"),
         path.join(extensionPath, "..", "..", "UIA_MCP_Engine.ahk"),
         path.join(extensionPath, "UIA_MCP_Engine.ahk"),
     ];
