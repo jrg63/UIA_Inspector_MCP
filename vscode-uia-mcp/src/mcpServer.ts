@@ -141,7 +141,26 @@ Sleep(500)
 settingsWin := UIA.ElementFromHandle("Settings ahk_exe target.exe")
 settingsWin.WaitElement({Type: "CheckBox", Name: "Enable"},, 3000).Toggle()
 \`\`\`
+### Win32 / VB6 Menus
+Win32 and VB6 applications (class \`#32768\`, \`ThunderRT6*\`, etc.) use native Windows menus. Submenus appear as **separate popup windows** (\`ahk_class #32768\`) — they are NOT children of the parent MenuItem and cannot be found with FindFirst on the parent window.
 
+\`\`\`ahk
+; Expand the top-level menu
+featuresMenu := winEl.FindFirst({Type: "MenuItem", Name: "Features"})
+featuresMenu.Expand()
+Sleep(200)
+
+; The submenu is a separate popup window — find it by class
+popup := UIA.ElementFromHandle("ahk_class #32768")
+; Or find the parent #32768 window via its title matching the menu name
+popup := UIA.ElementFromHandle("Features ahk_class #32768")
+
+; Now find and invoke the submenu item
+subItem := popup.FindFirst({Type: "MenuItem", Name: "Reports"})
+subItem.Invoke()
+\`\`\`
+
+For simple menu navigation, Send the accelerator key (e.g. \`Send("{F7}")\`) or use \`Send("!f r")\` for Alt+F then r (where \`r\` is the AccessKey shown in the UIA inspection).
 ### Best Practices
 1. Always use WinActivate/WinWaitActive before UIA interaction
 2. Prefer AutomationId over Name (AutomationId is usually stable across app versions)
