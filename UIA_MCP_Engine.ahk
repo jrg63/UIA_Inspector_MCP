@@ -1198,9 +1198,12 @@ _HandleRequest(jsonStr) {
         "get_window_info",      _HandleGetWindowInfo,
         "check_match_count",    _HandleCheckMatchCount,
         "get_child_elements",   _HandleGetChildElements,
-        "get_bounding_rect",    _HandleGetBoundingRect,
-        "wait_for_element",     _HandleWaitForElement,
-        "get_element_at_point", _HandleGetElementAtPoint,
+        "inspect_bounding_rect",    _HandleGetBoundingRect,
+        "inspect_element_wait",     _HandleWaitForElement,
+        "inspect_element_at_point", _HandleGetElementAtPoint,
+        "get_bounding_rect",    _HandleGetBoundingRect,    ; legacy alias
+        "wait_for_element",     _HandleWaitForElement,     ; legacy alias
+        "get_element_at_point", _HandleGetElementAtPoint,  ; legacy alias
         "get_full_element",     _HandleGetElementProperties,  ; alias
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )

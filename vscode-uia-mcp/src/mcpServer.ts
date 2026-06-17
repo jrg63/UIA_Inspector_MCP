@@ -156,7 +156,8 @@ export class UiaMcpServer {
     constructor(
         private daemon: AhkDaemonManager,
         private output: vscode.OutputChannel,
-        private context: vscode.ExtensionContext
+        private context: vscode.ExtensionContext,
+        private debugChannel?: vscode.OutputChannel
     ) {}
 
     /**
@@ -199,13 +200,21 @@ export class UiaMcpServer {
             // few calls.  We create it once and return the same instance.
             let cachedDef: any = null;
 
+            let callCount = 0;
             const provider = {
                 provideMcpServerDefinitions: (_token: vscode.CancellationToken) => {
-                    if (!McpDefClass) { return []; }
+                    callCount++;
+                    const ts = new Date().toISOString();
+                    this.debugChannel?.appendLine(`[${ts}] provideMcpServerDefinitions called (#${callCount})`);
+                    if (!McpDefClass) {
+                        this.debugChannel?.appendLine(`[${ts}] McpDefClass not found — returning []`);
+                        return [];
+                    }
                     if (!cachedDef) {
                         const cfg = vscode.workspace.getConfiguration("uia-mcp");
                         const logLevel = cfg.get<string>("logLevel", "info") ?? "info";
                         const port = cfg.get<number>("enginePort", 9876) ?? 9876;
+                        this.debugChannel?.appendLine(`[${ts}] Creating new McpStdioServerDefinition (port=${port}, logLevel=${logLevel})`);
                         cachedDef = new McpDefClass(
                             "UIA Inspector",
                             nodeExe,
@@ -217,6 +226,8 @@ export class UiaMcpServer {
                             }
                         );
                         this.output.appendLine("MCP server definition created (cached).");
+                    } else {
+                        this.debugChannel?.appendLine(`[${ts}] Returning cached definition`);
                     }
                     return [cachedDef];
                 },

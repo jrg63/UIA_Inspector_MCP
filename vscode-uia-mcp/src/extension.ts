@@ -8,14 +8,17 @@ let mcpServer: UiaMcpServer;
 export function activate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration("uia-mcp");
     const outputChannel = vscode.window.createOutputChannel("UIA MCP");
+    const mcpDebugChannel = vscode.window.createOutputChannel("MCP Debug");
 
+    mcpDebugChannel.appendLine(`UIA Inspector MCP extension activating at ${new Date().toISOString()}`);
+    mcpDebugChannel.appendLine(`VS Code version: ${vscode.version}`);
     outputChannel.appendLine("UIA Inspector MCP extension activating...");
 
     // ── AHK Daemon Manager ─────────────────────
     daemon = new AhkDaemonManager(outputChannel, context);
 
     // ── MCP Server ─────────────────────────────
-    mcpServer = new UiaMcpServer(daemon, outputChannel, context);
+    mcpServer = new UiaMcpServer(daemon, outputChannel, context, mcpDebugChannel);
 
     // ── Register commands ──────────────────────
     context.subscriptions.push(

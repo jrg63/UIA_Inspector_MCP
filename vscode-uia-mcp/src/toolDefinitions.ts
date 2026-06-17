@@ -13,9 +13,9 @@ export const TOOL_NAMES = [
     "get_window_info",
     "check_match_count",
     "get_child_elements",
-    "get_bounding_rect",
-    "wait_for_element",
-    "get_element_at_point",
+    "inspect_bounding_rect",
+    "inspect_element_wait",
+    "inspect_element_at_point",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -265,7 +265,7 @@ export function buildToolDefinitions(): ToolDefinition[] {
             },
         },
         {
-            name: "get_bounding_rect",
+            name: "inspect_bounding_rect",
             description:
                 "Get the bounding rectangle (left, top, right, bottom) of an element.",
             inputSchema: {
@@ -287,7 +287,7 @@ export function buildToolDefinitions(): ToolDefinition[] {
             },
         },
         {
-            name: "wait_for_element",
+            name: "inspect_element_wait",
             description:
                 "Poll until an element matching the condition appears, or timeout. Returns {found: true, element: ...} or {found: false}.",
             inputSchema: {
@@ -309,7 +309,7 @@ export function buildToolDefinitions(): ToolDefinition[] {
             },
         },
         {
-            name: "get_element_at_point",
+            name: "inspect_element_at_point",
             description:
                 "Get the UI element at specific screen coordinates (x, y).",
             inputSchema: {
