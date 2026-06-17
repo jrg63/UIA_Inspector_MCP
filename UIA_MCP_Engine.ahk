@@ -18,6 +18,10 @@ DetectHiddenWindows true
 #Include <UIA>
 #Include <UIA_Inspector\cjson>
 
+; ── cJSON configuration ───────────────────────
+; Ensure booleans serialize as true/false, not 0/1
+JSON.BoolsAsInts := 0
+
 ; ── Configuration ─────────────────────────────
 global ENGINE_PORT      := 9876
 global IDLE_TIMEOUT_MS  := 300000   ; 5 minutes
@@ -247,12 +251,32 @@ _BuildCondition(condObj) {
         propId := 0
         if nameToId.Has(key)
             propId := nameToId[key]
-        else if key is Integer
-            propId := key
-        if propId
-            condMap[propId] := String(val)
+        else {
+            try propId := Integer(key)
+            catch
+                propId := 0
+        }
+        if propId {
+            ; For Type property, convert name to integer ID (e.g. "Pane" → 50033)
+            if propId = 30003 && val is String {
+                try {
+                    typeId := UIA_Type.%val%
+                    condMap[propId] := typeId
+                } catch {
+                    condMap[propId] := String(val)
+                }
+            } else {
+                condMap[propId] := String(val)
+            }
+        }
     }
-    return condMap.Count ? condMap : ""
+    ; Convert Map to Object — UIA.CreateCondition requires Object, not Map
+    if !condMap.Count
+        return ""
+    condObj2 := {}
+    for k, v in condMap
+        condObj2.%k% := v
+    return condObj2
 }
 
 /**
@@ -1036,9 +1060,9 @@ _BuildFullElementResult(el, windowEl, hwnd, targetPid) {
     action := _DetermineAction(el)
     condition := _BuildConditionString(el)
 
-    result := {}
+    result := Map()
     for k, v in props
-        result.%k% := v
+        result[k] := v
     result["Patterns"] := patterns
     result["AncestorChain"] := ancestors
     result["InferredAction"] := action
@@ -1107,6 +1131,7 @@ _HandleRequest(jsonStr) {
 
 _DoShutdown(*) {
     FileDelete(PORT_FILE)
+    try DllCall("Ws2_32\WSACleanup")
     ExitApp()
 }
 
@@ -1127,6 +1152,12 @@ _OnAccept := _SocketOnAccept
 _OnRecv   := _SocketOnRecv
 _OnClose  := _SocketOnClose
 try {
+    ; Initialize Winsock (required before any socket calls)
+    wsadata := Buffer(400, 0)
+    r := DllCall("Ws2_32\WSAStartup", "UShort", 0x0202, "Ptr", wsadata)
+    if r != 0
+        throw Error("WSAStartup() failed: " r)
+
     srv := DllCall("Ws2_32\socket", "Int", 2, "Int", 1, "Int", 0, "Ptr") ; AF_INET, SOCK_STREAM, 0
     if srv = -1
         throw Error("socket() failed: " WSAGetLastError())
@@ -1146,8 +1177,10 @@ try {
     DllCall("Ws2_32\listen", "Ptr", srv, "Int", 1)
     serverBound := true
 } catch as err {
-    MsgBox("Failed to start TCP server on port " ENGINE_PORT ": " err.Message, "UIA MCP Engine", "IconX")
-    FileDelete(PORT_FILE)
+    OutputDebug "UIA_MCP_Engine: FATAL — " err.Message "`n"
+    ; Write error to port file so the extension can detect the failure
+    try FileDelete(PORT_FILE)
+    FileAppend("ERROR: " err.Message, PORT_FILE)
     ExitApp()
 }
 

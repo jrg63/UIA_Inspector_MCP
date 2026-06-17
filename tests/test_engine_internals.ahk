@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0.2+
+﻿#Requires AutoHotkey v2.0.2+
 #SingleInstance
 
 ; ══════════════════════════════════════════════════════════════════
@@ -13,14 +13,20 @@
 
 ; ── Test framework ────────────────────────────
 global _pass := 0, _fail := 0
+global _logFile := A_Temp "\test_engine_internals.log"
+
+_Log(msg) {
+    OutputDebug msg
+    FileAppend(msg, _logFile)  ; write to temp log file for PowerShell visibility
+}
 
 Assert(cond, name) {
     global _pass, _fail
     if cond {
-        OutputDebug "  PASS: " name "`n"
+        _Log("  PASS: " name "`n")
         _pass++
     } else {
-        OutputDebug "  FAIL: " name "`n"
+        _Log("  FAIL: " name "`n")
         _fail++
     }
 }
@@ -28,10 +34,10 @@ Assert(cond, name) {
 AssertEqual(actual, expected, name) {
     global _pass, _fail
     if actual = expected {
-        OutputDebug "  PASS: " name "`n"
+        _Log("  PASS: " name "`n")
         _pass++
     } else {
-        OutputDebug "  FAIL: " name " — expected '" expected "', got '" actual "'`n"
+        _Log("  FAIL: " name " — expected '" expected "', got '" actual "'`n")
         _fail++
     }
 }
@@ -39,10 +45,10 @@ AssertEqual(actual, expected, name) {
 AssertNotEqual(actual, unexpected, name) {
     global _pass, _fail
     if actual != unexpected {
-        OutputDebug "  PASS: " name "`n"
+        _Log("  PASS: " name "`n")
         _pass++
     } else {
-        OutputDebug "  FAIL: " name " — value is '" unexpected "'`n"
+        _Log("  FAIL: " name " — value is '" unexpected "'`n")
         _fail++
     }
 }
@@ -50,10 +56,10 @@ AssertNotEqual(actual, unexpected, name) {
 AssertHas(obj, key, name) {
     global _pass, _fail
     if IsObject(obj) && obj.Has(key) {
-        OutputDebug "  PASS: " name "`n"
+        _Log("  PASS: " name "`n")
         _pass++
     } else {
-        OutputDebug "  FAIL: " name " — key '" key "' not found`n"
+        _Log("  FAIL: " name " — key '" key "' not found`n")
         _fail++
     }
 }
@@ -61,10 +67,10 @@ AssertHas(obj, key, name) {
 AssertType(val, expectedType, name) {
     global _pass, _fail
     if Type(val) = expectedType {
-        OutputDebug "  PASS: " name "`n"
+        _Log("  PASS: " name "`n")
         _pass++
     } else {
-        OutputDebug "  FAIL: " name " — expected " expectedType ", got " Type(val) "`n"
+        _Log("  FAIL: " name " — expected " expectedType ", got " Type(val) "`n")
         _fail++
     }
 }
@@ -123,8 +129,11 @@ _BuildCondition(condObj) {
             propId := 0
             if nameToId.Has(key)
                 propId := nameToId[key]
-            else if key is Integer
-                propId := key
+            else {
+                try propId := Integer(key)
+                catch
+                    propId := 0
+            }
             if propId
                 condMap[propId] := String(val)
         }
@@ -335,7 +344,7 @@ _IsBrowserProcess(pid) {
 ; ══════════════════════════════════════════════════════════════
 
 Test_EscapeStr() {
-    OutputDebug "=== Test _EscapeStr ===`n"
+    _Log("=== Test _EscapeStr ===`n")
     AssertEqual(_EscapeStr('hello'), 'hello', "plain string unchanged")
     AssertEqual(_EscapeStr('say "hi"'), 'say \"hi\"', "quotes escaped")
     AssertEqual(_EscapeStr('a\b'), 'a\\b', "backslash escaped")
@@ -344,7 +353,7 @@ Test_EscapeStr() {
 }
 
 Test_Join() {
-    OutputDebug "=== Test _Join ===`n"
+    _Log("=== Test _Join ===`n")
     AssertEqual(_Join(["a"]), "a", "single element")
     AssertEqual(_Join(["a", "b"]), "a, b", "two elements")
     AssertEqual(_Join(["a", "b", "c"]), "a, b, c", "three elements")
@@ -352,7 +361,7 @@ Test_Join() {
 }
 
 Test_BuildCondition() {
-    OutputDebug "=== Test _BuildCondition ===`n"
+    _Log("=== Test _BuildCondition ===`n")
 
     ; Valid condition with Type
     cond := _BuildCondition({Type: "Button", Name: "OK"})
@@ -386,14 +395,14 @@ Test_BuildCondition() {
 }
 
 Test_MakeCacheRequest() {
-    OutputDebug "=== Test _MakeCacheRequest ===`n"
+    _Log("=== Test _MakeCacheRequest ===`n")
     cr := _MakeCacheRequest()
     Assert(cr != "", "cache request created")
     ; We can't easily inspect the cache request internals, but the call shouldn't throw
 }
 
 Test_IsBrowserProcess() {
-    OutputDebug "=== Test _IsBrowserProcess ===`n"
+    _Log("=== Test _IsBrowserProcess ===`n")
     ; Test with Explorer PID (should NOT be browser)
     explorerPid := ProcessExist("explorer.exe")
     if explorerPid
@@ -408,7 +417,7 @@ Test_IsBrowserProcess() {
 }
 
 Test_ElementSummary() {
-    OutputDebug "=== Test _ElementSummary ===`n"
+    _Log("=== Test _ElementSummary ===`n")
     ; Get a real element to test the summary function
     try {
         el := UIA.GetFocusedElement()
@@ -424,12 +433,12 @@ Test_ElementSummary() {
             Assert(summary.IsEnabled = true || summary.IsEnabled = false, "IsEnabled is boolean")
         }
     } catch as err {
-        OutputDebug "  SKIP: could not get focused element (" err.Message ")`n"
+        _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
 Test_ElementToMap() {
-    OutputDebug "=== Test _ElementToMap ===`n"
+    _Log("=== Test _ElementToMap ===`n")
     try {
         el := UIA.GetFocusedElement()
         if el {
@@ -443,12 +452,12 @@ Test_ElementToMap() {
             Assert(m.Has("FrameworkId"), "has FrameworkId")
         }
     } catch as err {
-        OutputDebug "  SKIP: could not get focused element (" err.Message ")`n"
+        _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
 Test_BuildConditionString() {
-    OutputDebug "=== Test _BuildConditionString ===`n"
+    _Log("=== Test _BuildConditionString ===`n")
     try {
         el := UIA.GetFocusedElement()
         if el {
@@ -460,12 +469,12 @@ Test_BuildConditionString() {
             Assert(InStr(cs, "Type:"), "contains Type:")
         }
     } catch as err {
-        OutputDebug "  SKIP: could not get focused element (" err.Message ")`n"
+        _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
 Test_GetPatterns() {
-    OutputDebug "=== Test _GetPatterns ===`n"
+    _Log("=== Test _GetPatterns ===`n")
     try {
         el := UIA.GetFocusedElement()
         if el {
@@ -476,12 +485,12 @@ Test_GetPatterns() {
                 Assert(p.Has("name"), "pattern has name: " p.name)
         }
     } catch as err {
-        OutputDebug "  SKIP: could not get focused element (" err.Message ")`n"
+        _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
 Test_GetAncestorChain() {
-    OutputDebug "=== Test _GetAncestorChain ===`n"
+    _Log("=== Test _GetAncestorChain ===`n")
     try {
         el := UIA.GetFocusedElement()
         if el {
@@ -489,15 +498,15 @@ Test_GetAncestorChain() {
             AssertType(chain, "Array", "ancestor chain is Array")
             Assert(chain.Length > 0, "chain has at least 1 element (self)")
             ; First element in chain should be the root
-            OutputDebug "    Chain depth: " chain.Length "`n"
+            _Log("    Chain depth: " chain.Length "`n")
         }
     } catch as err {
-        OutputDebug "  SKIP: could not get focused element (" err.Message ")`n"
+        _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
 Test_DetermineAction() {
-    OutputDebug "=== Test _DetermineAction ===`n"
+    _Log("=== Test _DetermineAction ===`n")
     try {
         el := UIA.GetFocusedElement()
         if el {
@@ -506,15 +515,25 @@ Test_DetermineAction() {
             ; Should end with ()
             Assert(SubStr(action, -1) = ")", "action ends with )")
             Assert(InStr(action, "("), "action contains (")
-            OutputDebug "    Inferred action: " action "`n"
+            _Log("    Inferred action: " action "`n")
         }
     } catch as err {
-        OutputDebug "  SKIP: could not get focused element (" err.Message ")`n"
+        _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
 Test_JSON_Serialize() {
-    OutputDebug "=== Test JSON Serialize/Parse ===`n"
+    _Log("=== Test JSON Serialize/Parse ===`n")
+
+    ; Verify JSON library is available (cJSON loads a native DLL at runtime;
+    ; if that fails, Stringify/Parse won't work and we skip these tests).
+    try {
+        testJson := JSON.Stringify({test: 1}, 0)
+    } catch as err {
+        _Log("  SKIP: JSON library unavailable — " err.Message "`n")
+        _Log("  (cJSON DLL may have failed to load. Check AHK bitness matches the DLL.)`n")
+        return
+    }
 
     ; Stringify
     json := JSON.Stringify({a: 1, b: "hello"}, 0)
@@ -551,7 +570,7 @@ Test_JSON_Serialize() {
 }
 
 Test_BuildCondition_EdgeCases() {
-    OutputDebug "=== Test _BuildCondition edge cases ===`n"
+    _Log("=== Test _BuildCondition edge cases ===`n")
 
     ; Single property
     cond := _BuildCondition({Type: "Button"})
@@ -574,9 +593,12 @@ Test_BuildCondition_EdgeCases() {
 ;  Main
 ; ══════════════════════════════════════════════════════════════
 
-OutputDebug "`n╔════════════════════════════════════════════════╗`n"
-OutputDebug "║  UIA_MCP_Engine Internal Unit Tests           ║`n"
-OutputDebug "╚════════════════════════════════════════════════╝`n`n"
+; Clear previous log
+try FileDelete(_logFile)
+
+_Log("`n╔════════════════════════════════════════════════╗`n")
+_Log("║  UIA_MCP_Engine Internal Unit Tests           ║`n")
+_Log("╚════════════════════════════════════════════════╝`n`n")
 
 ; Pure logic tests (no UIA dependency)
 Test_EscapeStr()
@@ -587,7 +609,7 @@ Test_JSON_Serialize()
 Test_IsBrowserProcess()
 
 ; Tests that require UIA (real element)
-OutputDebug "`n--- Tests requiring UIA (real element) ---`n`n"
+_Log("`n--- Tests requiring UIA (real element) ---`n`n")
 Test_MakeCacheRequest()
 Test_ElementSummary()
 Test_ElementToMap()
@@ -597,15 +619,16 @@ Test_GetAncestorChain()
 Test_DetermineAction()
 
 ; Report
-OutputDebug "`n╔════════════════════════════════════════════════╗`n"
-OutputDebug "║  Results                                       ║`n"
-OutputDebug "╚════════════════════════════════════════════════╝`n"
-OutputDebug "  Passed: " _pass "`n"
-OutputDebug "  Failed: " _fail "`n"
+_Log("`n╔════════════════════════════════════════════════╗`n")
+_Log("║  Results                                       ║`n")
+_Log("╚════════════════════════════════════════════════╝`n")
+_Log("  Passed: " _pass "`n")
+_Log("  Failed: " _fail "`n")
+_Log("  Log file: " _logFile "`n")
 
 if _fail > 0 {
-    OutputDebug "`nSOME TESTS FAILED!`n"
+    _Log("`nSOME TESTS FAILED!`n")
     ExitApp(1)
 }
-OutputDebug "`nAll tests passed!`n"
+_Log("`nAll tests passed!`n")
 ExitApp(0)

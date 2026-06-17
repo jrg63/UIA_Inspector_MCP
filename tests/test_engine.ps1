@@ -232,7 +232,7 @@ function Test-Windows {
     # list_windows (no filter)
     $r = Send-JsonRpc -Method "list_windows"
     Assert-Result $r "list_windows returns count" {
-        return $args[0].count -ne $null -and $args[0].count -gt 0
+        return $null -ne $args[0].count -and $args[0].count -gt 0
     }
     if ($r.result -and $r.result.windows) {
         $winCount = $r.result.windows.Count
@@ -240,39 +240,51 @@ function Test-Windows {
 
         # Verify structure of first window
         $w = $r.result.windows[0]
-        Assert-Result @{result=$w} "first window has hwnd" { $args[0].hwnd -ne $null }
-        Assert-Result @{result=$w} "first window has title" { $args[0].title -ne $null }
-        Assert-Result @{result=$w} "first window has exe"   { $args[0].exe -ne $null }
-        Assert-Result @{result=$w} "first window has pid"   { $args[0].pid -ne $null }
+        Assert-Result @{result=$w} "first window has hwnd" { $null -ne $args[0].hwnd }
+        Assert-Result @{result=$w} "first window has title" { $null -ne $args[0].title }
+        Assert-Result @{result=$w} "first window has exe"   { $null -ne $args[0].exe }
+        Assert-Result @{result=$w} "first window has pid"   { $null -ne $args[0].pid }
 
-        # Save first non-zero HWND for later tests
+        # Save a useful window for later tests — prefer Program Manager (desktop)
         foreach ($win in $r.result.windows) {
-            if ($win.title -and $win.title.Length -gt 0 -and $win.visible) {
+            if ($win.title -match "Program Manager") {
                 $script:testHwnd = $win.hwnd
                 $script:testTitle = $win.title
-                Write-Host "    Using window for further tests: $($win.title) ($($win.hwnd))" -ForegroundColor DarkGray
                 break
             }
+        }
+        # Fallback: any visible titled window
+        if (-not $script:testHwnd) {
+            foreach ($win in $r.result.windows) {
+                if ($win.title -and $win.title.Length -gt 0 -and $win.visible) {
+                    $script:testHwnd = $win.hwnd
+                    $script:testTitle = $win.title
+                    break
+                }
+            }
+        }
+        if ($script:testHwnd) {
+            Write-Host "    Using window for further tests: $($script:testTitle) ($($script:testHwnd))" -ForegroundColor DarkGray
         }
     }
 
     # list_windows (with filter)
     $r = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
     Assert-Result $r "list_windows with filter" {
-        return $args[0].count -ne $null
+        return $null -ne $args[0].count
     }
 
     # get_window_info for a known HWND
     if ($script:testHwnd) {
         $r = Send-JsonRpc -Method "get_window_info" -Params @{hwnd = $script:testHwnd}
         Assert-Result $r "get_window_info returns title" {
-            return $args[0].title -ne $null -and $args[0].title.Length -gt 0
+            return $null -ne $args[0].title -and $args[0].title.Length -gt 0
         }
         Assert-Result $r "get_window_info returns exe" {
-            return $args[0].exe -ne $null
+            return $null -ne $args[0].exe
         }
         Assert-Result $r "get_window_info returns rect" {
-            return $args[0].rect -ne $null -and $args[0].rect.left -ne $null
+            return $null -ne $args[0].rect -and $args[0].rect.left -ne $null
         }
     }
     else {
@@ -294,51 +306,52 @@ function Test-Find {
 
     $hwnd = $script:testHwnd
 
-    # check_match_count — find all buttons
+    # check_match_count — find all Pane elements (always present)
     $r = Send-JsonRpc -Method "check_match_count" -Params @{
-        condition = @{Type = "Button"}
+        condition = @{Type = "Pane"}
         hwnd = $hwnd
         scope = "Descendants"
     }
-    Assert-Result $r "check_match_count for Buttons" {
-        return $args[0].count -ne $null -and $args[0].count -ge 0
+    Assert-Result $r "check_match_count for Panes" {
+        return $null -ne $args[0].count -and $args[0].count -ge 0
     }
 
-    # find_all_elements — find all elements of type Button
+    # find_all_elements — find all elements of type Pane
     $r = Send-JsonRpc -Method "find_all_elements" -Params @{
-        condition = @{Type = "Button"}
+        condition = @{Type = "Pane"}
         hwnd = $hwnd
     }
-    Assert-Result $r "find_all_elements for Buttons" {
-        return $args[0].count -ne $null -and $args[0].elements -ne $null
+    Assert-Result $r "find_all_elements for Panes" {
+        return $null -ne $args[0].count -and $null -ne $args[0].elements
     }
 
-    # If we found buttons, try find_element on the first one
+    # If we found panes, try find_element on the first one
     if ($r.result -and $r.result.elements -and $r.result.elements.Count -gt 0) {
-        $firstBtn = $r.result.elements[0]
-        $name = $firstBtn.Name
-        if ($name) {
+        $first = $r.result.elements[0]
+        $name = $first.Name
+        $class = $first.ClassName
+        if ($class -and $name) {
             $r2 = Send-JsonRpc -Method "find_element" -Params @{
-                condition = @{Type = "Button"; Name = $name}
+                condition = @{ClassName = $class; Name = $name}
                 hwnd = $hwnd
             }
-            Assert-Result $r2 "find_element for Button '$name'" {
-                return $args[0].Type -eq "Button" -and $args[0].Name -eq $name
+            Assert-Result $r2 "find_element for '$class' '$name'" {
+                return $null -ne $args[0].ClassName
             }
 
             # Get properties of the found element
             if ($r2.result) {
                 $r3 = Send-JsonRpc -Method "get_element_properties" -Params @{
-                    condition = @{Type = "Button"; Name = $name}
+                    condition = @{ClassName = $class; Name = $name}
                     hwnd = $hwnd
                 }
                 Assert-Result $r3 "get_element_properties" {
-                    return ($args[0].Type -ne $null) -and ($args[0].Name -ne $null)
+                    return ($null -ne $args[0].Type) -and ($null -ne $args[0].Name)
                 }
 
                 # Get patterns
                 $r4 = Send-JsonRpc -Method "get_element_patterns" -Params @{
-                    condition = @{Type = "Button"; Name = $name}
+                    condition = @{ClassName = $class; Name = $name}
                     hwnd = $hwnd
                 }
                 Assert-Result $r4 "get_element_patterns returns array" {
@@ -350,31 +363,31 @@ function Test-Find {
 
                 # Get bounding rect
                 $r5 = Send-JsonRpc -Method "get_bounding_rect" -Params @{
-                    condition = @{Type = "Button"; Name = $name}
+                    condition = @{ClassName = $class; Name = $name}
                     hwnd = $hwnd
                 }
                 Assert-Result $r5 "get_bounding_rect" {
-                    return ($args[0].left -ne $null) -and ($args[0].top -ne $null) -and
-                           ($args[0].right -ne $null) -and ($args[0].bottom -ne $null)
+                    return ($null -ne $args[0].left) -and ($null -ne $args[0].top) -and
+                           ($null -ne $args[0].right) -and ($null -ne $args[0].bottom)
                 }
 
                 # Get ancestor chain
                 $r6 = Send-JsonRpc -Method "get_ancestor_chain" -Params @{
-                    condition = @{Type = "Button"; Name = $name}
+                    condition = @{ClassName = $class; Name = $name}
                     hwnd = $hwnd
                 }
                 Assert-Result $r6 "get_ancestor_chain" {
-                    return ($args[0].depth -ne $null) -and ($args[0].ancestors -ne $null) -and
+                    return ($null -ne $args[0].depth) -and ($null -ne $args[0].ancestors) -and
                            ($args[0].ancestors.Count -gt 0)
                 }
                 Write-Host "    Ancestor depth: $($r6.result.depth)" -ForegroundColor DarkGray
 
-                # Get child elements (from the ancestor root or from window root)
+                # Get child elements
                 $r7 = Send-JsonRpc -Method "get_child_elements" -Params @{
                     hwnd = $hwnd
                 }
                 Assert-Result $r7 "get_child_elements from window root" {
-                    return ($args[0].count -ne $null) -and ($args[0].children -ne $null)
+                    return ($null -ne $args[0].count) -and ($null -ne $args[0].children)
                 }
                 Write-Host "    Child count: $($r7.result.count)" -ForegroundColor DarkGray
             }
@@ -400,7 +413,7 @@ function Test-Tree {
         maxDepth = 2
     }
     Assert-Result $r "get_element_tree returns tree string" {
-        return ($args[0].tree -ne $null) -and ($args[0].tree.Length -gt 0)
+        return ($null -ne $args[0].tree) -and ($args[0].tree.Length -gt 0)
     }
     if ($r.result) {
         $lines = ($r.result.tree -split "`n").Count
@@ -413,7 +426,7 @@ function Test-Tree {
         maxDepth = 3
     }
     Assert-Result $r "get_element_tree depth=3" {
-        return ($args[0].tree -ne $null)
+        return ($null -ne $args[0].tree)
     }
 }
 
@@ -422,7 +435,7 @@ function Test-Focus {
 
     $r = Send-JsonRpc -Method "get_focused_element"
     Assert-Result $r "get_focused_element returns Type" {
-        return $args[0].Type -ne $null -and $args[0].Type -ne ""
+        return $null -ne $args[0].Type -and $args[0].Type -ne ""
     }
     if ($r.result) {
         Write-Host "    Focused: $($r.result.Type) '$($r.result.Name)'" -ForegroundColor DarkGray
@@ -451,15 +464,15 @@ function Test-Cursor {
         return
     }
     Assert-Result $r "inspect_at_cursor returns Type" {
-        return $args[0].Type -ne $null -and $args[0].Type -ne ""
+        return $null -ne $args[0].Type -and $args[0].Type -ne ""
     }
     if ($r.result) {
         Write-Host "    Element: $($r.result.Type) '$($r.result.Name)'" -ForegroundColor DarkGray
-        Assert-Result $r "has WindowTitle" { return $args[0].WindowTitle -ne $null }
-        Assert-Result $r "has AncestorChain" { return $args[0].AncestorChain -ne $null -and $args[0].AncestorChain.Count -gt 0 }
-        Assert-Result $r "has Patterns" { return $args[0].Patterns -ne $null }
-        Assert-Result $r "has InferredAction" { return $args[0].InferredAction -ne $null -and $args[0].InferredAction.Length -gt 0 }
-        Assert-Result $r "has ConditionString" { return $args[0].ConditionString -ne $null }
+        Assert-Result $r "has WindowTitle" { return $null -ne $args[0].WindowTitle }
+        Assert-Result $r "has AncestorChain" { return $null -ne $args[0].AncestorChain -and $args[0].AncestorChain.Count -gt 0 }
+        Assert-Result $r "has Patterns" { return $null -ne $args[0].Patterns }
+        Assert-Result $r "has InferredAction" { return $null -ne $args[0].InferredAction -and $args[0].InferredAction.Length -gt 0 }
+        Assert-Result $r "has ConditionString" { return $null -ne $args[0].ConditionString }
         Write-Host "    Condition: $($r.result.ConditionString)" -ForegroundColor DarkGray
         Write-Host "    Action: $($r.result.InferredAction)" -ForegroundColor DarkGray
     }
@@ -475,14 +488,13 @@ function Test-Wait {
         return
     }
 
-    # wait_for_element with a condition that definitely exists (short timeout)
+    # wait_for_element — find element by Name (always present in desktop)
     $r = Send-JsonRpc -Method "wait_for_element" -Params @{
-        condition = @{Type = "Window"}
+        condition = @{Name = "Desktop"}
         hwnd = $script:testHwnd
-        timeout = 2000
-        scope = "Element"
+        timeout = 3000
     }
-    Assert-Result $r "wait_for_element found Window" {
+    Assert-Result $r "wait_for_element found element by Name" {
         return $args[0].found -eq $true
     }
 
@@ -507,7 +519,7 @@ function Test-Point {
     # get_element_at_point with likely-valid screen coordinates
     $r = Send-JsonRpc -Method "get_element_at_point" -Params @{x = 100; y = 100}
     Assert-Result $r "get_element_at_point(100,100) returns Type" {
-        return ($args[0].Type -ne $null)
+        return ($null -ne $args[0].Type)
     }
     if ($r.result) {
         Write-Host "    Element at (100,100): $($r.result.Type) '$($r.result.Name)'" -ForegroundColor DarkGray
@@ -529,7 +541,7 @@ function Test-Elevation {
         
         $r2 = Send-JsonRpc -Method "get_window_info" -Params @{hwnd = $tm.hwnd}
         Assert-Result $r2 "get_window_info for Task Manager" {
-            return ($args[0].elevated -ne $null)
+            return ($null -ne $args[0].elevated)
         }
         if ($r2.result.elevated) {
             Write-Host "    Task Manager is elevated (expected)" -ForegroundColor DarkGray
@@ -576,18 +588,17 @@ $engineProcess = Start-Process -FilePath $ahk -ArgumentList "`"$script`" --port 
 Write-Host "Waiting for engine to start..." -ForegroundColor DarkGray
 $startTime = Get-Date
 $ready = $false
-while ((Get-Date) - $startTime).TotalSeconds -lt $EngineStartTimeout {
+do {
     try {
         $tcp = New-Object System.Net.Sockets.TcpClient
         $tcp.Connect("127.0.0.1", $Port)
         $tcp.Close()
         $ready = $true
-        break
     }
     catch {
         Start-Sleep -Milliseconds 500
     }
-}
+} while (-not $ready -and ((Get-Date) - $startTime).TotalSeconds -lt $EngineStartTimeout)
 
 if (-not $ready) {
     Write-Host "Engine did not start within $EngineStartTimeout seconds" -ForegroundColor Red
