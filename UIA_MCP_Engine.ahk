@@ -649,8 +649,14 @@ _ResolveLocator(locator) {
     root := 0
     ; Root by HWND
     if locator.Has("hwnd") && locator["hwnd"] {
-        cr := _MakeCacheRequest()
-        root := UIA.ElementFromHandle(locator["hwnd"], cr)
+        ; Try without cache request first — VB6/LegacyIAccessible
+        ; bridges can E_INVALIDARG when cache is combined with FindAll.
+        try {
+            root := UIA.ElementFromHandle(locator["hwnd"])
+        } catch {
+            cr := _MakeCacheRequest()
+            root := UIA.ElementFromHandle(locator["hwnd"], cr)
+        }
     }
     ; Root by focused element
     else {
@@ -671,11 +677,20 @@ _ResolveLocator(locator) {
     matchMode := _ResolveMatchMode(locator.Has("matchMode") ? locator["matchMode"] : "Exact")
     index := locator.Has("index") ? locator["index"] : 1
 
-    ; Use FindAll + index to get the Nth match
+    ; Use FindAll + index to get the Nth match.
+    ; Wrapped in its own try so COM errors don't propagate
+    ; and corrupt the engine's COM apartment.
     try {
         matches := root.FindAll(condMap, matchMode, scope)
         if IsObject(matches) && matches.Length >= index
             return matches[index]
+    } catch as findErr {
+        ; Distinguish COM parameter errors from "not found"
+        if InStr(findErr.Message, "0x80070057") || InStr(findErr.Message, "parameter is incorrect")
+            throw Error("FindAll failed on this window: " findErr.Message
+                . " — the condition may use properties unsupported by this window's UIA bridge.")
+        ; Re-throw other errors
+        throw findErr
     }
     throw Error("No element found matching the condition")
 }
@@ -816,16 +831,6 @@ _HandleFindElement(params) {
  * find_all_elements — return array of element summaries matching condition.
  */
 _HandleFindAllElements(params) {
-    root := 0
-    if params.Has("hwnd") && params["hwnd"] {
-        cr := _MakeCacheRequest()
-        root := UIA.ElementFromHandle(params["hwnd"], cr)
-    } else {
-        root := UIA.GetFocusedElement()
-    }
-    if !root
-        throw Error("Could not resolve root")
-
     condMap := _BuildCondition(params.Has("condition") ? params["condition"] : {})
     if condMap = ""
         throw Error("condition is required for find_all")
@@ -833,16 +838,51 @@ _HandleFindAllElements(params) {
     scope := _ResolveScope(params.Has("scope") ? params["scope"] : "Descendants")
     matchMode := _ResolveMatchMode(params.Has("matchMode") ? params["matchMode"] : "Exact")
 
-    matches := root.FindAll(condMap, matchMode, scope)
-    results := []
-    if IsObject(matches) {
-        for i, m in matches {
-            results.Push(_ElementSummary(m))
+    root := 0
+    if params.Has("hwnd") && params["hwnd"] {
+        ; Try without cache request first — VB6/LegacyIAccessible windows
+        ; can throw E_INVALIDARG (0x80070057) when a cache request is used
+        ; with FindAll.  Using a bare ElementFromHandle avoids this.
+        try {
+            root := UIA.ElementFromHandle(params["hwnd"])
+        } catch {
+            cr := _MakeCacheRequest()
+            root := UIA.ElementFromHandle(params["hwnd"], cr)
         }
+    } else {
+        root := UIA.GetFocusedElement()
     }
-    return {
-        count: results.Length,
-        elements: results
+    if !root
+        throw Error("Could not resolve root")
+
+    ; Protect FindAll — VB6/LegacyIAccessible bridges may throw
+    ; E_INVALIDARG for conditions containing properties they don't
+    ; support (e.g. AutomationId on a native menu item).  Catch it
+    ; and return a clear error without crashing the engine.
+    try {
+        matches := root.FindAll(condMap, matchMode, scope)
+        results := []
+        if IsObject(matches) {
+            for i, m in matches {
+                results.Push(_ElementSummary(m))
+            }
+        }
+        return {
+            count: results.Length,
+            elements: results
+        }
+    } catch as err {
+        ; E_INVALIDARG / other COM errors: the condition isn't
+        ; compatible with this element type.  Return a descriptive
+        ; error instead of letting the engine crash.
+        return {
+            count: 0,
+            elements: [],
+            warning: "FindAll failed: " err.Message
+                . " — this window may use a legacy UIA bridge (VB6, WinForms, etc.) "
+                . "that doesn't support the requested condition properties. "
+                . "Try a simpler condition (e.g. Type only)."
+        }
     }
 }
 
@@ -1213,13 +1253,34 @@ _HandleRequest(jsonStr) {
         return _RpcError(id, -32601, "Method not found: " method)
     }
 
+    ; ── Truncated params for debug log ──────────
+    ; Prevent log bloat from large payloads while still capturing
+    ; enough to replay failing requests.
+    paramsStr := ""
     try {
-        _Log(3, "Dispatching: " method)
+        s := JSON.Stringify(params, 0)
+        paramsStr := StrLen(s) <= 1024 ? s : SubStr(s, 1, 1024) "… (len=" StrLen(s) ")"
+    } catch
+        paramsStr := "[serialization error]"
+
+    tick := A_TickCount
+    try {
+        _Log(3, "Dispatching: " method " params=" paramsStr)
         result := handlers[method](params)
-        _Log(3, "Completed: " method)
+        elapsed := A_TickCount - tick
+        _Log(3, "Completed: " method " (" elapsed "ms)")
         return _RpcResult(id, result)
     } catch as err {
-        _Log(1, "Handler error [" method "]: " err.Message . (err.HasProp("What") ? " (" err.What ")" : ""))
+        elapsed := A_TickCount - tick
+        errDetail := err.HasProp("What") ? " (" err.What ")" : ""
+        _Log(1, "Handler error [" method "] (" elapsed "ms): " err.Message . errDetail . " | params=" paramsStr)
+        ; ── COM stabilisation ──────────────────────
+        ; After a COM error (especially E_INVALIDARG from legacy
+        ; UIA bridges like VB6), the COM apartment may be unstable.
+        ; A short sleep lets pending COM RPC calls drain before the
+        ; next request, preventing a silent native crash.
+        if InStr(err.Message, "0x8") || InStr(err.Message, "ComCall")
+            Sleep(50)
         return _RpcError(id, -32000, err.Message, err.HasProp("What") ? err.What : "")
     }
 }

@@ -30,6 +30,19 @@ function log(level: number, msg: string): void {
     try { process.stderr.write(line); } catch (_) {}
 }
 
+// ── Truncated JSON for debug logging ──────────
+// Prevents log bloat from huge element-tree responses while
+// still capturing enough context to replay failing requests.
+const MAX_DEBUG_JSON = 4096;
+
+function truncateJson(s: string): string {
+    if (s.length <= MAX_DEBUG_JSON) return s;
+    return s.slice(0, MAX_DEBUG_JSON) + `... (truncated, total ${s.length} bytes)`;
+}
+
+let _reqSeq = 0;
+function nextReqSeq(): number { return ++_reqSeq; }
+
 const TOOLS = [
     { name: "list_windows", description: "Enumerate all open top-level windows on the desktop.", inputSchema: { type: "object", properties: { filter: { type: "string" } }, required: [] } },
     { name: "get_window_info", description: "Get detailed information about a specific window.", inputSchema: { type: "object", properties: { hwnd: { type: "string" } }, required: ["hwnd"] } },
@@ -53,18 +66,20 @@ function isTransient(err: Error): boolean {
     return msg.includes("econnrefused") || msg.includes("engine timeout");
 }
 
-function sendToEngine(req: string, retries = MAX_RETRIES): Promise<string> {
+function sendToEngine(req: string, retries = MAX_RETRIES, seq?: number): Promise<string> {
+    const label = seq != null ? `[#${seq}] ` : "";
+    log(3, `${label}>> engine: ${truncateJson(req)}`);
     return new Promise((resolve, reject) => {
         const c = new net.Socket();
         let r = "";
         c.setTimeout(SOCKET_TIMEOUT_MS);
         c.connect(ENGINE_PORT, ENGINE_HOST, () => c.write(req + "\n"));
-        c.on("data", (d: Buffer) => { r += d.toString("utf-8"); if (r.includes("\n")) { c.destroy(); resolve(r.trim()); } });
+        c.on("data", (d: Buffer) => { r += d.toString("utf-8"); if (r.includes("\n")) { c.destroy(); log(3, `${label}<< engine: ${truncateJson(r.trim())}`); resolve(r.trim()); } });
         c.on("error", (e: Error) => {
             c.destroy();
             if (retries > 0 && isTransient(e)) {
                 log(2, `Transient error (${e.message}), retrying in ${RETRY_BACKOFF_MS}ms (${retries} left)`);
-                setTimeout(() => sendToEngine(req, retries - 1).then(resolve, reject), RETRY_BACKOFF_MS);
+                setTimeout(() => sendToEngine(req, retries - 1, seq).then(resolve, reject), RETRY_BACKOFF_MS);
             } else {
                 reject(e);
             }
@@ -73,7 +88,7 @@ function sendToEngine(req: string, retries = MAX_RETRIES): Promise<string> {
             c.destroy();
             if (retries > 0) {
                 log(2, `Socket timeout, retrying in ${RETRY_BACKOFF_MS}ms (${retries} left)`);
-                setTimeout(() => sendToEngine(req, retries - 1).then(resolve, reject), RETRY_BACKOFF_MS);
+                setTimeout(() => sendToEngine(req, retries - 1, seq).then(resolve, reject), RETRY_BACKOFF_MS);
             } else {
                 reject(new Error("Engine timeout after retries"));
             }
@@ -101,8 +116,8 @@ function err(id: any, code: number, message: string): string {
     return JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }) + "\n";
 }
 
-async function handleInitialize(id: any): Promise<string> {
-    log(2, "MCP initialize");
+async function handleInitialize(id: any, params: any): Promise<string> {
+    log(2, `MCP initialize id=${id} client=${JSON.stringify(params?.clientInfo || {})}`);
     return ok(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
@@ -111,20 +126,29 @@ async function handleInitialize(id: any): Promise<string> {
 }
 
 async function handleToolsCall(id: any, params: any): Promise<string> {
-    const engineReq = JSON.stringify({ jsonrpc: "2.0", method: params.name, params: params.arguments || {}, id: 1 });
-    log(3, "Calling engine: " + params.name);
+    const seq = nextReqSeq();
+    const toolName = params?.name || "?";
+    const toolArgs = params?.arguments || {};
+
+    // Log the full MCP request so it can be replayed after a fix
+    log(2, `[#${seq}] tools/call id=${id} method=${toolName} args=${truncateJson(JSON.stringify(toolArgs))}`);
+
+    const engineReq = JSON.stringify({ jsonrpc: "2.0", method: toolName, params: toolArgs, id: 1 });
+    const t0 = Date.now();
     try {
-        const engineResp = await enqueueEngine(() => sendToEngine(engineReq));
+        const engineResp = await enqueueEngine(() => sendToEngine(engineReq, MAX_RETRIES, seq));
+        const elapsed = Date.now() - t0;
         const p = JSON.parse(engineResp);
         if (p.error) {
-            log(1, `Engine error [${params.name}]: ${p.error.message}`);
+            log(1, `[#${seq}] Engine error [${toolName}] (${elapsed}ms): ${p.error.message} | args=${truncateJson(JSON.stringify(toolArgs))}`);
             // Return error as normal content (not isError) to avoid VS Code auto-disabling the tool
             return ok(id, { content: [{ type: "text", text: `Error: ${p.error.message}` }] });
         }
-        log(3, "Engine OK: " + params.name);
+        log(2, `[#${seq}] Engine OK [${toolName}] (${elapsed}ms)`);
         return ok(id, { content: [{ type: "text", text: JSON.stringify(p.result, null, 2) }] });
     } catch (e: any) {
-        log(1, `Bridge error [${params.name}]: ${e.message}`);
+        const elapsed = Date.now() - t0;
+        log(1, `[#${seq}] Bridge error [${toolName}] (${elapsed}ms): ${e.message} | args=${truncateJson(JSON.stringify(toolArgs))}`);
         // Return bridge error as normal content — VS Code won't auto-disable the tool
         return ok(id, { content: [{ type: "text", text: `Bridge error (engine may be restarting — try again): ${e.message}` }] });
     }
@@ -151,11 +175,11 @@ log(2, "Keep-alive started (every " + (KEEPALIVE_MS / 1000) + "s)");
 
 rl.on("line", async (line: string) => {
     let req: any;
-    try { req = JSON.parse(line); } catch { log(1, "JSON parse error"); process.stdout.write(err(null, -32700, "Parse error")); return; }
+    try { req = JSON.parse(line); } catch { log(1, "JSON parse error on stdin: " + truncateJson(line)); process.stdout.write(err(null, -32700, "Parse error")); return; }
     try {
         switch (req.method) {
-            case "initialize": process.stdout.write(await handleInitialize(req.id)); break;
-            case "notifications/initialized": break;
+            case "initialize": process.stdout.write(await handleInitialize(req.id, req.params)); break;
+            case "notifications/initialized": log(2, "MCP notifications/initialized"); break;
             case "tools/list": {
                 log(2, `tools/list requested — returning ${TOOLS.length} tools`);
                 const response = ok(req.id, { tools: TOOLS });
@@ -166,7 +190,10 @@ rl.on("line", async (line: string) => {
                 break;
             }
             case "tools/call": process.stdout.write(await handleToolsCall(req.id, req.params)); break;
-            default: process.stdout.write(await enqueueEngine(() => sendToEngine(line)) + "\n"); break;
+            default:
+                log(2, `Forwarding unknown method to engine: ${req.method} id=${req.id}`);
+                process.stdout.write(await enqueueEngine(() => sendToEngine(line)) + "\n");
+                break;
         }
     } catch (e: any) { log(1, "Unhandled error: " + e.message); process.stdout.write(err(req.id, -32603, e.message)); }
 });

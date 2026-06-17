@@ -21,6 +21,10 @@ export class AhkDaemonManager {
     private idleTimer: NodeJS.Timeout | null = null;
     private healthCheckTimer: NodeJS.Timeout | null = null;
     private pendingRequests = 0;
+    /** true when this instance spawned the engine; false when we adopted an already-running engine */
+    private ownsProcess = false;
+
+    private static readonly GLOBAL_STATE_KEY = "lastEngineScriptPath";
 
     constructor(
         private output: vscode.OutputChannel,
@@ -66,7 +70,23 @@ export class AhkDaemonManager {
         const wsPaths: string[] = workspaceFolders
             ? workspaceFolders.map((f) => f.uri.fsPath)
             : [];
-        return findEngineScript(wsPaths, this.context.extensionPath, configPath || undefined);
+
+        try {
+            const result = findEngineScript(wsPaths, this.context.extensionPath, configPath || undefined);
+            // Remember for cross-workspace reuse
+            this.context.globalState.update(AhkDaemonManager.GLOBAL_STATE_KEY, result);
+            return result;
+        } catch (err) {
+            // Fall back to the last-known-good path stored in globalState
+            const lastPath = this.context.globalState.get<string>(AhkDaemonManager.GLOBAL_STATE_KEY);
+            if (lastPath && fs.existsSync(lastPath)) {
+                this.output.appendLine(
+                    `Engine script not found in workspace; reusing last-known path: ${lastPath}`
+                );
+                return lastPath;
+            }
+            throw err;
+        }
     }
 
     private getPortFile(): string {
@@ -81,6 +101,22 @@ export class AhkDaemonManager {
 
         this.setState("starting");
         this.output.appendLine("Starting AHK UIA engine...");
+
+        // Before spawning a new engine, check if one is already
+        // listening on our port (e.g. from another VS Code window).
+        // If so, adopt it instead of starting a second instance.
+        try {
+            const alreadyRunning = await this.ping();
+            if (alreadyRunning) {
+                this.output.appendLine("Engine already listening on port — adopting.");
+                this.ownsProcess = false;
+                this.setState("running");
+                this.startHealthCheck();
+                return;
+            }
+        } catch {
+            // No engine running — proceed with spawn
+        }
 
         try {
             const ahkExe = this.findAhkExe();
@@ -142,6 +178,7 @@ export class AhkDaemonManager {
 
             // Wait for the engine to be ready (port file appears)
             await this.waitForReady();
+            this.ownsProcess = true;
             this.setState("running");
             this.startHealthCheck();
             this.output.appendLine("Engine started successfully.");
@@ -175,10 +212,18 @@ export class AhkDaemonManager {
     }
 
     async stop(): Promise<void> {
+        if (!this.ownsProcess) {
+            this.output.appendLine("Not stopping engine (adopted from another window).");
+            this.stopHealthCheck();
+            this.setState("stopped");
+            return;
+        }
         if (this.process) {
             this.output.appendLine("Stopping AHK engine...");
             this.stopHealthCheck();
             const oldProc = this.process;
+            this.process = null;
+            this.ownsProcess = false;
 
             try {
                 await this.sendCommand("shutdown", {});
@@ -315,12 +360,23 @@ export class AhkDaemonManager {
             try {
                 const ok = await this.ping();
                 if (!ok && this.state === "running") {
-                    this.output.appendLine("Health check failed — engine may be down.");
-                    this.setState("error");
+                    this.output.appendLine("Health check failed — attempting auto-restart.");
+                    this.setState("stopped");
+                    // Auto-restart: the engine may have been killed by a
+                    // COM crash on a legacy window.  Try to bring it back.
+                    await this.start();
+                    if (this.state !== "running") {
+                        this.setState("error");
+                    }
                 }
             } catch {
                 if (this.state === "running") {
-                    this.setState("error");
+                    this.output.appendLine("Health check exception — attempting auto-restart.");
+                    this.setState("stopped");
+                    await this.start();
+                    if (this.state !== "running") {
+                        this.setState("error");
+                    }
                 }
             }
         }, 30000);
