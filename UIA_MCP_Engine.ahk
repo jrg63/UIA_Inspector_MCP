@@ -951,42 +951,71 @@ _HandleGetElementPatterns(params) {
 }
 
 /**
- * list_windows — enumerate all top-level windows.
+ * EnumWindows callback — collects window info into a global temp list.
+ *
+ * Using EnumWindows (Win32 API) instead of WinGetList() because AHK's
+ * WinGetList() internally filters out owned/tool windows — notably VB6
+ * MDI forms (ThunderRT6MDIForm) and any window with GWLP_HWNDPARENT set.
+ * EnumWindows sees every top-level window unconditionally.
+ */
+_EnumWindowsCollect(hwnd, lParam) {
+    try {
+        title := WinGetTitle(hwnd)
+        class := WinGetClass(hwnd)
+        pid  := WinGetPID(hwnd)
+        exe  := ProcessGetName(pid)
+        WinGetPos(&x, &y, &w, &h, hwnd)
+
+        global _enumWindowsTmp
+        _enumWindowsTmp.Push({
+            hwnd:    Format("0x{:X}", hwnd),
+            title:   title,
+            class:   class,
+            pid:     pid,
+            exe:     exe,
+            rect:    {left: x, top: y, right: x + w, bottom: y + h},
+            elevated: _IsElevated(pid),
+            visible: WinGetMinMax(hwnd) != -1
+        })
+    } catch as err {
+        ; Log the failure so operators can diagnose enumeration gaps.
+        ; Previously a bare `try` silently dropped the window.
+        _Log(1, "list_windows: skipping HWND " Format("0x{:X}", hwnd)
+                . " — " . err.Message)
+    }
+    return true  ; continue enumeration
+}
+
+/**
+ * list_windows — enumerate all top-level windows via EnumWindows.
  */
 _HandleListWindows(params) {
     filter := params.Has("filter") ? params["filter"] : ""
-    windows := []
     filterLower := StrLower(filter)
     
-    DetectHiddenWindows(true)
-    hwnds := WinGetList()
-    for i, hwnd in hwnds {
-        try {
-            title := WinGetTitle(hwnd)
-            class := WinGetClass(hwnd)
-            pid := WinGetPID(hwnd)
-            exe := ProcessGetName(pid)
-            WinGetPos(&x, &y, &w, &h, hwnd)
-
-            if filterLower && !InStr(StrLower(title), filterLower) && !InStr(StrLower(exe), filterLower)
-                continue
-
-            elevated := _IsElevated(pid)
-
-            windows.Push({
-                hwnd: Format("0x{:X}", hwnd),
-                title: title,
-                class: class,
-                pid: pid,
-                exe: exe,
-                rect: {left: x, top: y, right: x + w, bottom: y + h},
-                elevated: elevated,
-                visible: WinGetMinMax(hwnd) != -1
-            })
+    ; ── Collect every top-level window via EnumWindows ──────────
+    global _enumWindowsTmp := []
+    
+    cb := CallbackCreate(_EnumWindowsCollect, , 2)
+    DllCall("EnumWindows", "Ptr", cb, "Ptr", 0)
+    CallbackFree(cb)
+    
+    windows := _enumWindowsTmp
+    _enumWindowsTmp := ""  ; release global reference
+    
+    ; ── Apply optional filter post-collection ───────────────────
+    if filterLower {
+        filtered := []
+        for win in windows {
+            if InStr(StrLower(win.title), filterLower)
+                    || InStr(StrLower(win.exe), filterLower)
+                filtered.Push(win)
         }
+        windows := filtered
     }
+    
     return {
-        count: windows.Length,
+        count:   windows.Length,
         windows: windows
     }
 }
