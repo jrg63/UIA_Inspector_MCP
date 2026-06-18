@@ -32,8 +32,8 @@ OUT_BRIDGE   := $(OUT_DIR)/mcpBridge.js
 
 # Tools
 NPM    := cd $(EXT_DIR) && npm
-BUNDLE := cd $(EXT_DIR) && node esbuild.config.mjs
-VSCE   := cd $(EXT_DIR) && npx @vscode/vsce
+BUNDLE := cd $(EXT_DIR) && NODE_NO_WARNINGS=DEP0169 node esbuild.config.mjs
+VSCE   := cd $(EXT_DIR) && NODE_NO_WARNINGS=DEP0169 npx @vscode/vsce
 
 .PHONY: all package install test test-coverage clean deps force-build typecheck
 
