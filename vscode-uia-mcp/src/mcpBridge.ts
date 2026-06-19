@@ -70,6 +70,10 @@ const TOOLS = [
     { name: "uia_get_element_from_path", description: "Navigate UIA tree using path syntax.", inputSchema: { type: "object", properties: { hwnd: { type: "string" }, path: { type: "string" } }, required: ["hwnd", "path"] } },
     { name: "uia_get_root_element", description: "Get the desktop root element.", inputSchema: { type: "object", properties: {}, required: [] } },
     { name: "uia_element_from_chromium", description: "Get Chromium content element from browser.", inputSchema: { type: "object", properties: { hwnd: { type: "string" } }, required: ["hwnd"] } },
+    { name: "uia_get_state_enums", description: "Get UIA state value mappings (ToggleState, ExpandCollapseState, etc.).", inputSchema: { type: "object", properties: {}, required: [] } },
+    { name: "uia_manage_window", description: "Activate, minimize, maximize, restore, close, move, or resize a window.", inputSchema: { type: "object", properties: { hwnd: { type: "string" }, action: { type: "string", enum: ["Activate","Minimize","Maximize","Restore","Close","Move","Resize"] }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["hwnd", "action"] } },
+    { name: "uia_capture_screenshot", description: "Capture a screenshot of a window.", inputSchema: { type: "object", properties: { hwnd: { type: "string" }, filePath: { type: "string" } }, required: ["hwnd"] } },
+    { name: "uia_get_code_recipe", description: "Get AHK v2 code templates for common scenarios.", inputSchema: { type: "object", properties: { recipe: { type: "string" } }, required: ["recipe"] } },
 ];
 
 function isTransient(err: Error): boolean {

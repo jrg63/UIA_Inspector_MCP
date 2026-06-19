@@ -284,6 +284,11 @@ export class UiaMcpServer {
                     }
                     return [cachedDef];
                 },
+                resolveMcpServerDefinition: (server: any, _token: vscode.CancellationToken) => {
+                    const ts = new Date().toISOString();
+                    this.debugChannel?.appendLine(`[${ts}] resolveMcpServerDefinition called — returning server as-is`);
+                    return server;
+                },
             };
 
             context.subscriptions.push(

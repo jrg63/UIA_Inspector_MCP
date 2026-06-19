@@ -27,6 +27,10 @@ export const TOOL_NAMES = [
     "uia_get_element_from_path",
     "uia_get_root_element",
     "uia_element_from_chromium",
+    "uia_get_state_enums",
+    "uia_manage_window",
+    "uia_capture_screenshot",
+    "uia_get_code_recipe",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -544,6 +548,61 @@ export function buildToolDefinitions(): ToolDefinition[] {
                     },
                 },
                 required: ["hwnd"],
+            },
+        },
+        {
+            name: "uia_get_state_enums",
+            description:
+                "Get well-known UIA state value mappings (ToggleState, ExpandCollapseState, WindowVisualState, Orientation, etc.). Returns each state name mapped to its integer→string values. CRITICAL for code generation: without this, the LLM guesses whether ToggleState 1 means On or Off, producing broken conditional logic.",
+            inputSchema: { type: "object", properties: {}, required: [] },
+        },
+        {
+            name: "uia_manage_window",
+            description:
+                "Manage a window: Activate (bring to foreground), Minimize, Maximize, Restore, Close, Move (requires x,y), or Resize (requires width,height). Use this to control window lifecycle in automation workflows.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    hwnd: { type: "string", description: "Hex HWND of the target window" },
+                    action: {
+                        type: "string",
+                        enum: ["Activate", "Minimize", "Maximize", "Restore", "Close", "Move", "Resize"],
+                        description: "The window operation to perform",
+                    },
+                    x: { type: "number", description: "X coordinate for Move action" },
+                    y: { type: "number", description: "Y coordinate for Move action" },
+                    width: { type: "number", description: "Width for Resize action" },
+                    height: { type: "number", description: "Height for Resize action" },
+                },
+                required: ["hwnd", "action"],
+            },
+        },
+        {
+            name: "uia_capture_screenshot",
+            description:
+                "Capture a screenshot of a window's client area and save as BMP. Returns the file path, width, and height. Use this to get visual context about the UI layout — the LLM can analyze the screenshot to understand spatial relationships, colors, and element positioning that are invisible to UIA text inspection.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    hwnd: { type: "string", description: "Hex HWND of the window to capture" },
+                    filePath: { type: "string", description: "Optional output path. Default: %TEMP%/UIA_Screenshot_<timestamp>.bmp" },
+                },
+                required: ["hwnd"],
+            },
+        },
+        {
+            name: "uia_get_code_recipe",
+            description:
+                "Get a proven AHK v2 code template for a common automation scenario. Recipes: activate_window, find_and_click, menu_navigate, dialog_fill, tree_explore, grid_read, wait_and_click, combo_select, list_recipes. Use 'list_recipes' to see all available recipes.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    recipe: {
+                        type: "string",
+                        description: "Recipe name. Use 'list_recipes' to enumerate all options.",
+                    },
+                },
+                required: ["recipe"],
             },
         },
     ];

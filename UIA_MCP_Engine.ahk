@@ -668,6 +668,37 @@ _Join(arr)
 ;  Process Detection Helpers
 ; ══════════════════════════════════════════════════════════════════
 
+/**
+ * Check if a window is Chromium-based (Chrome, Edge, Electron, CEF, etc.).
+ *
+ * Uses the UIA library's built-in WindowIsChromium detection which covers
+ * ALL Chromium-based apps — Electron (Signal, Discord, Slack, VS Code, Teams),
+ * CEF (Spotify), and standard browsers — not just a hardcoded list.
+ *
+ * @param {Integer} hwnd - window handle (use "ahk_id " prefix for string calls)
+ * @returns {Boolean} True if the window uses Chromium rendering
+ */
+_IsChromiumWindow(hwnd)
+{
+    try
+    {
+        return(UIA.WindowIsChromium("ahk_id " hwnd))
+    }
+    catch
+    {
+        return(false)
+    }
+}
+
+/**
+ * Check if a process is a known browser by executable name.
+ *
+ * For Chromium-based window detection (including Electron apps like Signal,
+ * Discord, VS Code), use _IsChromiumWindow instead.
+ *
+ * @param {Integer} pid - process ID
+ * @returns {Boolean} True if the process is a browser
+ */
 _IsBrowserProcess(pid)
 {
     try
@@ -1853,8 +1884,10 @@ _HandleElementFromChromium(params)
 
     targetPid := WinGetPID("ahk_id " hwnd)
 
-    if (!_IsBrowserProcess(targetPid))
-        throw Error("The specified window is not a known browser process")
+    if (!_IsChromiumWindow(hwnd))
+        throw Error("The specified window is not a Chromium-based application. "
+            . "This tool works with Chrome, Edge, Brave, and Electron apps "
+            . "(Signal, Discord, VS Code, Teams, Slack, etc.)")
 
     try
     {
@@ -1877,6 +1910,414 @@ _HandleElementFromChromium(params)
 
     windowEl := UIA.ElementFromHandle(hwnd, cr)
     return _BuildFullElementResult(el, windowEl, hwnd, targetPid)
+}
+
+; ══════════════════════════════════════════════════════════════════
+;  Utility Handlers — state enums, window management, screenshot, recipes
+; ══════════════════════════════════════════════════════════════════
+
+/**
+ * uia_get_state_enums — return well-known UIA state value → name mappings.
+ *
+ * Critical for LLM code generation: without this, the LLM guesses whether
+ * ToggleState 1 means "On" or "Off", and generates broken conditional logic.
+ *
+ * @returns {Object} State name → {value: name} mappings
+ */
+_HandleGetStateEnums(params)
+{
+    enums := Map()
+
+    enums["ToggleState"] := Map(
+        0, "Off",
+        1, "On",
+        2, "Indeterminate"
+    )
+
+    enums["ExpandCollapseState"] := Map(
+        0, "Collapsed",
+        1, "Expanded",
+        2, "PartiallyExpanded",
+        3, "LeafNode"
+    )
+
+    enums["WindowVisualState"] := Map(
+        0, "Normal",
+        1, "Maximized",
+        2, "Minimized"
+    )
+
+    enums["WindowInteractionState"] := Map(
+        0, "Running",
+        1, "Closing",
+        2, "ReadyForUserInteraction",
+        3, "BlockedByModalWindow",
+        4, "NotResponding"
+    )
+
+    enums["Orientation"] := Map(
+        0, "None",
+        1, "Horizontal",
+        2, "Vertical"
+    )
+
+    enums["RowOrColumnMajor"] := Map(
+        0, "RowMajor",
+        1, "ColumnMajor"
+    )
+
+    enums["DockPosition"] := Map(
+        0, "Top",
+        1, "Left",
+        2, "Bottom",
+        3, "Right",
+        4, "Fill",
+        5, "None"
+    )
+
+    enums["SupportedTextSelection"] := Map(
+        0, "None",
+        1, "Single",
+        2, "Multiple"
+    )
+
+    enums["LiveSetting"] := Map(
+        0, "Off",
+        1, "Polite",
+        2, "Assertive"
+    )
+
+    enums["ZoomUnit"] := Map(
+        0, "NoAmount",
+        1, "LargeDecrement",
+        2, "SmallDecrement",
+        3, "LargeIncrement",
+        4, "SmallIncrement"
+    )
+
+    return enums
+}
+
+/**
+ * uia_manage_window — perform window lifecycle operations.
+ *
+ * Supported actions: Activate, Minimize, Maximize, Restore, Close, Move, Resize.
+ * For Move: provide x and y. For Resize: provide width and height.
+ *
+ * @param {Object} params - must include hwnd and action
+ * @returns {Object} Result with success flag
+ */
+_HandleManageWindow(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
+        throw Error("hwnd is required")
+
+    action := params.Has("action") ? params["action"] : ""
+    if (action = "")
+        throw Error("action is required")
+
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+
+    switch action
+    {
+    case "Activate":
+        WinActivate("ahk_id " hwnd)
+        WinWaitActive("ahk_id " hwnd,, 2)
+        return {success: true, action: "Activate"}
+
+    case "Minimize":
+        WinMinimize("ahk_id " hwnd)
+        return {success: true, action: "Minimize"}
+
+    case "Maximize":
+        WinMaximize("ahk_id " hwnd)
+        return {success: true, action: "Maximize"}
+
+    case "Restore":
+        WinRestore("ahk_id " hwnd)
+        return {success: true, action: "Restore"}
+
+    case "Close":
+        WinClose("ahk_id " hwnd)
+        return {success: true, action: "Close"}
+
+    case "Move":
+        if (!params.Has("x") || !params.Has("y"))
+            throw Error("x and y are required for Move action")
+        WinMove(params["x"], params["y"],,, "ahk_id " hwnd)
+        return {success: true, action: "Move", x: params["x"], y: params["y"]}
+
+    case "Resize":
+        if (!params.Has("width") || !params.Has("height"))
+            throw Error("width and height are required for Resize action")
+        WinMove(,, params["width"], params["height"], "ahk_id " hwnd)
+        return {success: true, action: "Resize", width: params["width"], height: params["height"]}
+
+    default:
+        throw Error("Unknown window action: " action
+            . ". Supported: Activate, Minimize, Maximize, Restore, Close, Move, Resize")
+    }
+}
+
+/**
+ * uia_capture_screenshot — capture a screenshot of a window.
+ *
+ * Captures the client area to a BMP file and returns the path.
+ * Uses native GDI DllCalls — no external library required.
+ *
+ * @param {Object} params - must include hwnd, optional filePath
+ * @returns {Object} Result with filePath of the captured screenshot
+ */
+_HandleCaptureScreenshot(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
+        throw Error("hwnd is required")
+
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+
+    ; Determine output path — always use .bmp (GDI limitation)
+    filePath := params.Has("filePath") ? params["filePath"]
+        : A_Temp "\UIA_Screenshot_" FormatTime(A_Now, "yyyyMMdd-HHmmss") ".bmp"
+    ; Force .bmp extension regardless of input
+    if (!InStr(filePath, ".bmp"))
+        filePath .= ".bmp"
+
+    ; Get window dimensions
+    try WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
+    catch as err
+        throw Error("Could not get window position: " err.Message)
+
+    if (w <= 0 || h <= 0)
+        throw Error("Window has zero size — cannot capture")
+
+    ; Try window DC first (GDI windows).  Falls back to screen DC for
+    ; D3D/DirectComposition surfaces (Electron, Chromium, UWP, WPF).
+    ; PrintWindow returns error 2 on D3D swap chains — screen BitBlt
+    ; captures whatever is visible regardless of rendering backend.
+    hdcWindow := DllCall("GetWindowDC", "Ptr", hwnd, "Ptr")
+    useScreenDC := false
+    if (!hdcWindow)
+    {
+        ; Window DC unavailable — use screen DC
+        hdcWindow := DllCall("GetDC", "Ptr", 0, "Ptr")
+        useScreenDC := true
+    }
+
+    hdcMem := DllCall("CreateCompatibleDC", "Ptr", hdcWindow, "Ptr")
+    hBitmap := DllCall("CreateCompatibleBitmap", "Ptr", hdcWindow, "Int", w, "Int", h, "Ptr")
+    oldBitmap := DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hBitmap, "Ptr")
+
+    result := DllCall("PrintWindow", "Ptr", hwnd, "Ptr", hdcMem, "UInt", 0, "Int")
+    if (!result)
+    {
+        ; PrintWindow failed — use BitBlt.
+        ; If using screen DC, translate to screen coordinates.
+        if (useScreenDC)
+        {
+            DllCall("BitBlt", "Ptr", hdcMem, "Int", 0, "Int", 0, "Int", w, "Int", h,
+                    "Ptr", hdcWindow, "Int", x, "Int", y, "UInt", 0x00CC0020)
+        }
+        else
+        {
+            DllCall("BitBlt", "Ptr", hdcMem, "Int", 0, "Int", 0, "Int", w, "Int", h,
+                    "Ptr", hdcWindow, "Int", 0, "Int", 0, "UInt", 0x00CC0020)
+        }
+    }
+
+    ; Save to BMP file
+    _SaveBitmapToFile(hBitmap, filePath, w, h)
+
+    ; Cleanup
+    DllCall("SelectObject", "Ptr", hdcMem, "Ptr", oldBitmap)
+    DllCall("DeleteObject", "Ptr", hBitmap)
+    DllCall("DeleteDC", "Ptr", hdcMem)
+    if (useScreenDC)
+        DllCall("ReleaseDC", "Ptr", 0, "Ptr", hdcWindow)
+    else
+        DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hdcWindow)
+
+    return {success: true, filePath: filePath, width: w, height: h}
+}
+
+/**
+ * Save a GDI bitmap handle to a BMP file on disk.
+ *
+ * @param {Integer} hBitmap - GDI bitmap handle
+ * @param {String} filePath - output file path
+ * @param {Integer} width - image width
+ * @param {Integer} height - image height
+ */
+_SaveBitmapToFile(hBitmap, filePath, width, height)
+{
+    ; Get bitmap bits
+    biSize := 40
+    bitsSize := width * height * 4
+    fileHeaderSize := 14
+
+    bmi := Buffer(biSize, 0)
+    NumPut("Int", biSize, bmi, 0)
+    NumPut("Int", width, bmi, 4)
+    NumPut("Int", -height, bmi, 8)  ; negative = top-down
+    NumPut("UShort", 1, bmi, 12)
+    NumPut("UShort", 32, bmi, 14)   ; 32-bit
+
+    bits := Buffer(bitsSize, 0)
+    hdc := DllCall("GetDC", "Ptr", 0, "Ptr")
+    DllCall("GetDIBits", "Ptr", hdc, "Ptr", hBitmap, "UInt", 0, "UInt", height,
+            "Ptr", bits, "Ptr", bmi, "UInt", 0)
+    DllCall("ReleaseDC", "Ptr", 0, "Ptr", hdc)
+
+    ; Write BMP file
+    fileHeader := Buffer(fileHeaderSize, 0)
+    NumPut("UShort", 0x4D42, fileHeader, 0)  ; "BM"
+    NumPut("UInt", fileHeaderSize + biSize + bitsSize, fileHeader, 2)
+    NumPut("UInt", fileHeaderSize + biSize, fileHeader, 10)
+
+    FileDelete(filePath)
+    f := FileOpen(filePath, "w")
+    f.RawWrite(fileHeader, fileHeaderSize)
+    f.RawWrite(bmi, biSize)
+    f.RawWrite(bits, bitsSize)
+    f.Close()
+}
+
+/**
+ * uia_get_code_recipe — return proven AHK v2 code templates for common automation scenarios.
+ *
+ * @param {Object} params - must include recipe name
+ * @returns {Object} Recipe with name, description, and ahkCode
+ */
+_HandleGetCodeRecipe(params)
+{
+    recipe := params.Has("recipe") ? params["recipe"] : ""
+    if (recipe = "")
+        throw Error("recipe is required. Available recipes: " _ListRecipes())
+
+    switch recipe
+    {
+    case "activate_window":
+        return {
+            name: "activate_window",
+            description: "Activate a window and get its UIA element",
+            ahkCode: 'WinActivate("Window Title ahk_exe target.exe")`n'
+                . 'WinWaitActive("Window Title ahk_exe target.exe")`n'
+                . 'winEl := UIA.ElementFromHandle("Window Title ahk_exe target.exe")'
+        }
+
+    case "find_and_click":
+        return {
+            name: "find_and_click",
+            description: "Find a button and click it with error handling",
+            ahkCode: 'try {`n'
+                . '    btn := winEl.WaitElement({Type: "Button", Name: "OK"},, 5000)`n'
+                . '    btn.Click()`n'
+                . '    Sleep(200)`n'
+                . '} catch as err {`n'
+                . '    MsgBox("Failed: " err.Message)`n'
+                . '}'
+        }
+
+    case "menu_navigate":
+        return {
+            name: "menu_navigate",
+            description: "Navigate a native menu: File → Open with submenu handling",
+            ahkCode: '; Expand top-level menu`n'
+                . 'winEl.FindFirst({Type: "MenuItem", Name: "File"}).Expand()`n'
+                . 'Sleep(200)`n'
+                . '; The submenu is a separate #32768 popup window`n'
+                . 'popup := UIA.ElementFromHandle("ahk_class #32768")`n'
+                . 'popup.FindFirst({Type: "MenuItem", Name: "Open..."}).Invoke()`n'
+                . 'Sleep(300)'
+        }
+
+    case "dialog_fill":
+        return {
+            name: "dialog_fill",
+            description: "Fill fields in a dialog and submit",
+            ahkCode: '; Wait for dialog to appear`n'
+                . 'dlgEl := UIA.ElementFromHandle("Dialog Title ahk_class #32770")`n'
+                . '; Fill fields`n'
+                . 'dlgEl.FindFirst({Type: "Edit", AutomationId: "nameField"}).SetValue("John Doe")`n'
+                . 'dlgEl.FindFirst({Type: "ComboBox", Name: "Country"}).SetValue("Canada")`n'
+                . '; Click OK`n'
+                . 'dlgEl.FindFirst({Type: "Button", Name: "OK"}).Invoke()`n'
+                . 'Sleep(200)'
+        }
+
+    case "tree_explore":
+        return {
+            name: "tree_explore",
+            description: "Expand tree nodes and select a leaf item",
+            ahkCode: '; Find and expand tree nodes`n'
+                . 'tree := winEl.FindFirst({Type: "Tree"})`n'
+                . 'node := tree.FindFirst({Type: "TreeItem", Name: "Parent Node"})`n'
+                . 'node.Expand()`n'
+                . 'Sleep(100)`n'
+                . '; Select child item`n'
+                . 'child := node.FindFirst({Type: "TreeItem", Name: "Child Item"},, UIA.TreeScope.Children)`n'
+                . 'child.Select()'
+        }
+
+    case "grid_read":
+        return {
+            name: "grid_read",
+            description: "Iterate a DataGrid and read cell values",
+            ahkCode: 'grid := winEl.FindFirst({Type: "DataGrid"})`n'
+                . 'rows := grid.FindAll({Type: "DataItem"})`n'
+                . 'for row in rows {`n'
+                . '    cells := row.FindAll({Type: "Text"},, UIA.TreeScope.Children)`n'
+                . '    for cell in cells`n'
+                . '        OutputDebug cell.Name`n'
+                . '}'
+        }
+
+    case "wait_and_click":
+        return {
+            name: "wait_and_click",
+            description: "Wait for an element, click it, and wait for a result element",
+            ahkCode: '; Wait for button to appear`n'
+                . 'btn := winEl.WaitElement({Type: "Button", Name: "Submit"},, 10000)`n'
+                . 'if !btn`n'
+                . '    throw Error("Submit button never appeared")`n'
+                . 'btn.Click()`n'
+                . 'Sleep(300)`n'
+                . '; Wait for result to appear`n'
+                . 'result := winEl.WaitElement({Type: "Text", Name: "Success"},, 5000)`n'
+                . 'if result`n'
+                . '    MsgBox("Operation completed")'
+        }
+
+    case "combo_select":
+        return {
+            name: "combo_select",
+            description: "Expand a ComboBox and select an item by name",
+            ahkCode: 'combo := winEl.FindFirst({Type: "ComboBox", AutomationId: "countrySelect"})`n'
+                . 'combo.Expand()`n'
+                . 'Sleep(100)`n'
+                . '; Find the popup list and select an item`n'
+                . 'combo.FindFirst({Type: "ListItem", Name: "Canada"}).Select()'
+        }
+
+    case "list_recipes":
+        return {
+            name: "list_recipes",
+            description: "Available recipe names",
+            recipes: _ListRecipes()
+        }
+
+    default:
+        throw Error("Unknown recipe: " recipe . ". Available: " _ListRecipes())
+    }
+}
+
+_ListRecipes()
+{
+    return "activate_window, find_and_click, menu_navigate, dialog_fill, "
+        . "tree_explore, grid_read, wait_and_click, combo_select, list_recipes"
 }
 
 ; ══════════════════════════════════════════════════════════════════
@@ -1965,6 +2406,10 @@ _HandleRequest(jsonStr)
         "uia_get_element_from_path", _HandleGetElementFromPath,
         "uia_get_root_element",      _HandleGetRootElement,
         "uia_element_from_chromium", _HandleElementFromChromium,
+        "uia_get_state_enums",      _HandleGetStateEnums,
+        "uia_manage_window",        _HandleManageWindow,
+        "uia_capture_screenshot",   _HandleCaptureScreenshot,
+        "uia_get_code_recipe",      _HandleGetCodeRecipe,
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )
 

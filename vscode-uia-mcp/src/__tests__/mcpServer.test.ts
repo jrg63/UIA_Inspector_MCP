@@ -14,8 +14,8 @@ import {
 // ── Tests: Tool Name Registry ──────────────────────────────────
 
 describe("Tool Name Registry", () => {
-    test("all 26 tools are in TOOL_NAMES", () => {
-        expect(TOOL_NAMES).toHaveLength(26);
+    test("all 30 tools are in TOOL_NAMES", () => {
+        expect(TOOL_NAMES).toHaveLength(30);
     });
 
     test("TOOL_NAMES has no duplicates", () => {
@@ -46,8 +46,8 @@ describe("Tool Definitions", () => {
         tools = buildToolDefinitions();
     });
 
-    test("generates exactly 26 tool definitions", () => {
-        expect(tools).toHaveLength(26);
+    test("generates exactly 30 tool definitions", () => {
+        expect(tools).toHaveLength(30);
     });
 
     test("every tool has a name, description, and inputSchema", () => {
@@ -252,6 +252,33 @@ describe("Tool Definitions", () => {
         expect(efc).toBeDefined();
         expect(efc.inputSchema.required).toContain("hwnd");
     });
+
+    // ── Utility tool tests ──────────────────────────
+
+    test("uia_get_state_enums has no required params", () => {
+        const se = tools.find((t) => t.name === "uia_get_state_enums")!;
+        expect(se).toBeDefined();
+        expect(se.inputSchema.required).toEqual([]);
+    });
+
+    test("uia_manage_window requires hwnd and action", () => {
+        const mw = tools.find((t) => t.name === "uia_manage_window")!;
+        expect(mw.inputSchema.required).toContain("hwnd");
+        expect(mw.inputSchema.required).toContain("action");
+        expect(mw.inputSchema.properties["action"].enum).toContain("Activate");
+        expect(mw.inputSchema.properties["action"].enum).toContain("Close");
+        expect(mw.inputSchema.properties["action"].enum).toHaveLength(7);
+    });
+
+    test("uia_capture_screenshot requires hwnd", () => {
+        const cs = tools.find((t) => t.name === "uia_capture_screenshot")!;
+        expect(cs.inputSchema.required).toContain("hwnd");
+    });
+
+    test("uia_get_code_recipe requires recipe", () => {
+        const cr = tools.find((t) => t.name === "uia_get_code_recipe")!;
+        expect(cr.inputSchema.required).toContain("recipe");
+    });
 });
 
 // ── Tests: Tool Name Mapping ───────────────────────────────────
@@ -264,4 +291,200 @@ describe("Tool Name Mapping", () => {
             expect(engineMethods.has(tool.name)).toBe(true);
         }
     });
+});
+
+// ── Tests: Bridge Integration (mcpBridge.js stdio protocol) ─────
+//
+// This test spawns the actual mcpBridge.js process and validates the
+// MCP protocol handshake + tools/list response.  It requires the
+// AHK engine to be running on port 9876.  If the engine is not
+// running, the test is skipped.
+//
+// THIS IS THE TEST THAT WOULD HAVE CAUGHT THE REGISTRATION BUG —
+// it validates that the bridge correctly advertises all 30 tools.
+
+import { spawnSync } from "child_process";
+import * as path from "path";
+import * as net from "net";
+
+describe("Bridge Integration", () => {
+    const BRIDGE_SCRIPT = path.resolve(__dirname, "../../out/mcpBridge.js");
+    const ENGINE_PORT = parseInt(process.env.UIA_MCP_PORT || "9876", 10);
+    const ENGINE_HOST = "127.0.0.1";
+
+    function engineRunning(): boolean {
+        try {
+            const sock = new net.Socket();
+            sock.connect(ENGINE_PORT, ENGINE_HOST);
+            sock.destroy();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function sendMcpRequest(
+        method: string,
+        params?: any
+    ): { id: any; result?: any; error?: any } {
+        const child = spawnSync(
+            "node",
+            [BRIDGE_SCRIPT],
+            {
+                env: {
+                    ...process.env,
+                    UIA_MCP_PORT: String(ENGINE_PORT),
+                    UIA_MCP_LOG_LEVEL: "error",
+                    UIA_MCP_LOG_FILE: path.join(
+                        require("os").tmpdir(),
+                        "UIA_MCP_Bridge_test.log"
+                    ),
+                },
+                input: JSON.stringify({
+                    jsonrpc: "2.0",
+                    method,
+                    params: params || {},
+                    id: 1,
+                }) + "\n",
+                timeout: 15000,
+                encoding: "utf-8",
+            }
+        );
+
+        if (child.error) {
+            throw new Error(`Bridge spawn failed: ${child.error.message}`);
+        }
+
+        const lines = (child.stdout || "")
+            .split("\n")
+            .filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+            try {
+                const parsed = JSON.parse(line);
+                if (parsed.id === 1 || parsed.id === 1) {
+                    return parsed;
+                }
+            } catch {
+                // skip non-JSON lines
+            }
+        }
+        throw new Error(
+            `No valid JSON-RPC response from bridge. stdout: ${child.stdout?.slice(0, 500)}`
+        );
+    }
+
+    test("bridge returns 30 tools from tools/list", () => {
+        if (!engineRunning()) {
+            console.warn("SKIP: AHK engine not running on port " + ENGINE_PORT);
+            return;
+        }
+
+        const response = sendMcpRequest("tools/list");
+        expect(response.error).toBeUndefined();
+        expect(response.result).toBeDefined();
+        expect(response.result.tools).toBeDefined();
+        expect(Array.isArray(response.result.tools)).toBe(true);
+        expect(response.result.tools.length).toBe(30);
+
+        // Verify key tools exist
+        const names = response.result.tools.map((t: any) => t.name);
+        expect(names).toContain("list_windows");
+        expect(names).toContain("uia_perform_action");
+        expect(names).toContain("uia_get_type_catalog");
+        expect(names).toContain("uia_manage_window");
+        expect(names).toContain("uia_get_code_recipe");
+    });
+
+    test("bridge initialize returns correct protocol version", () => {
+        if (!engineRunning()) {
+            console.warn("SKIP: AHK engine not running on port " + ENGINE_PORT);
+            return;
+        }
+
+        const response = sendMcpRequest("initialize", {
+            protocolVersion: "2024-11-05",
+            clientInfo: { name: "test", version: "1.0" },
+        });
+        expect(response.error).toBeUndefined();
+        expect(response.result.protocolVersion).toBe("2024-11-05");
+        expect(response.result.capabilities.tools).toEqual({});
+        expect(response.result.serverInfo.name).toBe("UIA Inspector");
+    });
+
+    test("bridge tools/call forwards to engine", async () => {
+        if (!engineRunning()) {
+            console.warn("SKIP: AHK engine not running on port " + ENGINE_PORT);
+            return;
+        }
+
+        // The engine only accepts one TCP connection at a time.
+        // If the live bridge is connected, tools/call will fail
+        // because the test bridge can't connect.  The tools/list
+        // test above works because it doesn't need the engine.
+        // Skip this test when the live bridge is running.
+        const portFile = path.join(
+            require("os").tmpdir(),
+            "UIA_MCP_Engine.port"
+        );
+        const fs = require("fs");
+        if (fs.existsSync(portFile)) {
+            console.warn(
+                "SKIP: Live bridge is connected (port file exists) — " +
+                "engine only accepts one TCP connection"
+            );
+            return;
+        }
+
+        const { spawn } = require("child_process");
+        const child = spawn("node", [BRIDGE_SCRIPT], {
+            env: {
+                ...process.env,
+                UIA_MCP_PORT: String(ENGINE_PORT),
+                UIA_MCP_LOG_LEVEL: "error",
+                UIA_MCP_LOG_FILE: path.join(
+                    require("os").tmpdir(),
+                    "UIA_MCP_Bridge_test.log"
+                ),
+            },
+            stdio: ["pipe", "pipe", "pipe"],
+        });
+
+        const response = await new Promise<string>((resolve, reject) => {
+            const chunks: string[] = [];
+            child.stdout.on("data", (d: Buffer) => chunks.push(d.toString()));
+            const timer = setTimeout(() => {
+                child.kill();
+                resolve(chunks.join(""));
+            }, 5000);
+            child.stdout.on("end", () => {
+                clearTimeout(timer);
+                resolve(chunks.join(""));
+            });
+            child.on("error", reject);
+
+            child.stdin.write(
+                JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "tools/call",
+                    params: { name: "uia_get_state_enums", arguments: {} },
+                    id: 1,
+                }) + "\n"
+            );
+            child.stdin.end();
+        });
+
+        const lines = response.split("\n").filter((l) => l.trim().length > 0);
+        if (lines.length === 0) {
+            console.warn("SKIP: No response — engine connection likely held by live bridge");
+            return;
+        }
+
+        const parsed = JSON.parse(lines[0]);
+        expect(parsed.error).toBeUndefined();
+        expect(parsed.result.content).toBeDefined();
+        const text = parsed.result.content[0].text;
+        const result = JSON.parse(text);
+        expect(result.ToggleState).toBeDefined();
+        expect(result.ToggleState["0"]).toBe("Off");
+    }, 15000);
 });

@@ -659,6 +659,49 @@ function Test-Discovery {
     }
 }
 
+function Test-Utility {
+    Write-Info "=== Utility Tests ==="
+
+    # State enums
+    $r = Send-JsonRpc -Method "uia_get_state_enums"
+    Assert-Result $r "state enums returns data" {
+        $enums = $args[0]
+        return ($null -ne $enums.ToggleState -and $null -ne $enums.ExpandCollapseState)
+    }
+    if ($r.result.ToggleState) {
+        Write-Host "    ToggleState: $($r.result.ToggleState | ConvertTo-Json -Compress)" -ForegroundColor DarkGray
+    }
+
+    # Code recipe — list
+    $r = Send-JsonRpc -Method "uia_get_code_recipe" -Params @{recipe = "list_recipes"}
+    Assert-Result $r "recipe list returns recipes" {
+        return ($null -ne $args[0].recipes)
+    }
+
+    # Code recipe — specific
+    $r = Send-JsonRpc -Method "uia_get_code_recipe" -Params @{recipe = "find_and_click"}
+    Assert-Result $r "find_and_click recipe has ahkCode" {
+        return ($args[0].ahkCode -match 'WaitElement')
+    }
+
+    # Window management — Activate requires real HWND
+    $win = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
+    if ($win.result.windows.Count -gt 0) {
+        $hwnd = $win.result.windows[0].hwnd
+        $r = Send-JsonRpc -Method "uia_manage_window" -Params @{hwnd = $hwnd; action = "Restore"}
+        Assert-NoError $r "manage_window Restore succeeds"
+    }
+    else {
+        Write-Warn
+        Write-Host "    No window for manage test" -ForegroundColor Yellow
+        $script:warned++
+    }
+
+    # Window management — missing action should error
+    $r = Send-JsonRpc -Method "uia_manage_window" -Params @{hwnd = "0x12345"}
+    Assert-Error $r "manage_window without action errors"
+}
+
 # ═══════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════
@@ -731,6 +774,7 @@ try {
     Test-Catalogs
     Test-Actions
     Test-Discovery
+    Test-Utility
 }
 catch {
     Write-Host "Test suite threw: $_" -ForegroundColor Red

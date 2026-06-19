@@ -397,6 +397,18 @@ _IsBrowserProcess(pid)
     return(false)
 }
 
+_IsChromiumWindow(hwnd)
+{
+    try
+    {
+        return(UIA.WindowIsChromium("ahk_id " hwnd))
+    }
+    catch
+    {
+        return(false)
+    }
+}
+
 ; ── Replicated Phase 1+2+3 handlers ────────────
 
 _HandleGetTypeCatalog(params)
@@ -574,6 +586,50 @@ _ArrayContains(arr, val)
     return(false)
 }
 
+_HandleGetStateEnums(params)
+{
+    enums := Map()
+    enums["ToggleState"] := Map(0, "Off", 1, "On", 2, "Indeterminate")
+    enums["ExpandCollapseState"] := Map(0, "Collapsed", 1, "Expanded", 2, "PartiallyExpanded", 3, "LeafNode")
+    enums["WindowVisualState"] := Map(0, "Normal", 1, "Maximized", 2, "Minimized")
+    enums["WindowInteractionState"] := Map(0, "Running", 1, "Closing", 2, "ReadyForUserInteraction", 3, "BlockedByModalWindow", 4, "NotResponding")
+    enums["Orientation"] := Map(0, "None", 1, "Horizontal", 2, "Vertical")
+    enums["RowOrColumnMajor"] := Map(0, "RowMajor", 1, "ColumnMajor")
+    enums["DockPosition"] := Map(0, "Top", 1, "Left", 2, "Bottom", 3, "Right", 4, "Fill", 5, "None")
+    enums["SupportedTextSelection"] := Map(0, "None", 1, "Single", 2, "Multiple")
+    enums["LiveSetting"] := Map(0, "Off", 1, "Polite", 2, "Assertive")
+    enums["ZoomUnit"] := Map(0, "NoAmount", 1, "LargeDecrement", 2, "SmallDecrement", 3, "LargeIncrement", 4, "SmallIncrement")
+    return(enums)
+}
+
+_HandleGetCodeRecipe(params)
+{
+    recipe := params.Has("recipe") ? params["recipe"] : ""
+    switch recipe
+    {
+    case "list_recipes":
+        return {recipes: "activate_window, find_and_click, menu_navigate, dialog_fill, tree_explore, grid_read, wait_and_click, combo_select, list_recipes"}
+    case "find_and_click":
+        return {name: recipe, description: "Find and click", ahkCode: "btn := winEl.WaitElement({Type: `"Button`", Name: `"OK`"},, 5000)`nbtn.Click()"}
+    case "activate_window":
+        return {name: recipe, description: "Activate", ahkCode: "WinActivate(`"Title ahk_exe exe`")"}
+    case "menu_navigate":
+        return {name: recipe, description: "Menu", ahkCode: "winEl.FindFirst({Type: `"MenuItem`"}).Expand()"}
+    case "dialog_fill":
+        return {name: recipe, description: "Dialog", ahkCode: "dlgEl.FindFirst({Type: `"Edit`"}).SetValue(`"text`")"}
+    case "tree_explore":
+        return {name: recipe, description: "Tree", ahkCode: "tree.FindFirst({Type: `"TreeItem`"}).Expand()"}
+    case "grid_read":
+        return {name: recipe, description: "Grid", ahkCode: "grid.FindAll({Type: `"DataItem`"})"}
+    case "wait_and_click":
+        return {name: recipe, description: "Wait+Click", ahkCode: "btn := winEl.WaitElement({Type: `"Button`"},, 10000)`nbtn.Click()"}
+    case "combo_select":
+        return {name: recipe, description: "Combo", ahkCode: "combo.FindFirst({Type: `"ListItem`"}).Select()"}
+    default:
+        throw Error("Unknown recipe: " recipe)
+    }
+}
+
 ; ══════════════════════════════════════════════════════════════
 ;  Tests
 ; ══════════════════════════════════════════════════════════════
@@ -654,6 +710,26 @@ Test_IsBrowserProcess()
 
     ; Known false negatives should not crash
     Assert(!_IsBrowserProcess(99999999), "nonexistent PID returns false")
+}
+
+Test_ChromiumDetection()
+{
+    _Log("=== Test _IsChromiumWindow ===`n")
+    ; Test with Explorer (NOT Chromium)
+    explorerHwnd := WinExist("ahk_class Progman")
+    if (explorerHwnd)
+        Assert(!_IsChromiumWindow(explorerHwnd), "Explorer is not Chromium")
+
+    ; Test with own script window (NOT Chromium)
+    Assert(!_IsChromiumWindow(A_ScriptHwnd), "AHK script is not Chromium")
+
+    ; Test with invalid HWND (should not crash)
+    Assert(!_IsChromiumWindow(0), "HWND 0 returns false")
+    Assert(!_IsChromiumWindow(99999999), "nonexistent HWND returns false")
+
+    ; Note: Chromium detection requires a real Chromium window.
+    ; Edge/Chrome would return true if running, but we can't guarantee that.
+    _Log("    (Chromium-positive test requires a running Chromium app)`n")
 }
 
 Test_ElementSummary()
@@ -954,6 +1030,61 @@ Test_RootElement()
         _Log("  SKIP: RootElement failed (" err.Message ")`n")
 }
 
+Test_StateEnums()
+{
+    _Log("=== Test _HandleGetStateEnums ===`n")
+    try
+    {
+        result := _HandleGetStateEnums({})
+        Assert(IsObject(result), "state enums is object")
+        Assert(result.Has("ToggleState"), "ToggleState exists")
+        Assert(result["ToggleState"].Has(0), "ToggleState has Off=0")
+        AssertEqual(result["ToggleState"][0], "Off", "ToggleState 0=Off")
+        AssertEqual(result["ToggleState"][1], "On", "ToggleState 1=On")
+        Assert(result.Has("ExpandCollapseState"), "ExpandCollapseState exists")
+        Assert(result.Has("WindowVisualState"), "WindowVisualState exists")
+        Assert(result.Has("Orientation"), "Orientation exists")
+        Assert(result.Has("DockPosition"), "DockPosition exists")
+        _Log("    State enums returned: " result.Count " states`n")
+    }
+    catch as err
+        _Log("  SKIP: StateEnums failed (" err.Message ")`n")
+}
+
+Test_CodeRecipe()
+{
+    _Log("=== Test _HandleGetCodeRecipe ===`n")
+    try
+    {
+        ; List recipes
+        result := _HandleGetCodeRecipe({recipe: "list_recipes"})
+        Assert(IsObject(result), "recipe list is object")
+        Assert(result.Has("recipes"), "list_recipes has recipes string")
+        Assert(InStr(result["recipes"], "find_and_click"), "recipes include find_and_click")
+
+        ; Get specific recipe
+        result := _HandleGetCodeRecipe({recipe: "find_and_click"})
+        Assert(result.Has("ahkCode"), "recipe has ahkCode")
+        Assert(InStr(result["ahkCode"], "WaitElement"), "ahkCode contains WaitElement")
+        Assert(InStr(result["ahkCode"], "Click"), "ahkCode contains Click")
+
+        ; Unknown recipe should error
+        try
+        {
+            _HandleGetCodeRecipe({recipe: "nonexistent_recipe"})
+            Assert(false, "unknown recipe should throw")
+        }
+        catch
+        {
+            Assert(true, "unknown recipe throws error")
+        }
+
+        _Log("    Recipe test passed`n")
+    }
+    catch as err
+        _Log("  SKIP: CodeRecipe failed (" err.Message ")`n")
+}
+
 ; ══════════════════════════════════════════════════════════════
 ;  Tests for Phase 1+2+3 handlers (requires UIA — real element)
 ; ══════════════════════════════════════════════════════════════
@@ -1043,10 +1174,16 @@ Test_BuildCondition()
 Test_BuildCondition_EdgeCases()
 Test_JSON_Serialize()
 Test_IsBrowserProcess()
+Test_ChromiumDetection()
 Test_TypeCatalog()
 Test_PatternCatalog()
 Test_ElementExists_Pure()
 Test_WaitNotExist_Pure()
+Test_StateEnums()
+Test_CodeRecipe()
+
+; ── Verify all 30 methods are registered ──────
+Test_HandlerCount()
 
 ; Tests that require UIA (real element)
 _Log("`n--- Tests requiring UIA (real element) ---`n`n")
