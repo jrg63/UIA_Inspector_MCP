@@ -120,6 +120,40 @@ el.SetFocus()                ; Set keyboard focus
 el.Highlight()               ; Draw colored overlay (visual debugging)
 \`\`\`
 
+### MCP Discovery Tools (use these to explore UI before generating code)
+When exploring an unfamiliar application, use these MCP tools for interactive discovery:
+
+- \`uia_get_type_catalog\` — get all valid UIA type names and IDs
+- \`uia_get_pattern_catalog\` — get all UIA patterns with their methods/properties
+- \`uia_perform_action\` — interact with elements to verify behavior (Invoke buttons, Toggle checkboxes, SetValue on edits, etc.)
+- \`uia_highlight_element\` — visually confirm you found the right element
+- \`uia_dump_tree\` — comprehensive tree dump (more detail than get_element_tree)
+- \`uia_element_exists\` — safe check if an element is present (no throw)
+- \`uia_wait_element_not_exist\` — wait for dialogs/spinners to close
+
+Example workflow: call \`uia_perform_action\` with action="Invoke" to click through a menu, then \`list_windows\` to discover new windows that appear, then \`get_element_tree\` on the new window to explore its structure. This verifies the UI flow before you generate AHK code.
+
+### Wait for Disappearance
+\`\`\`ahk
+; Wait for a dialog or loading spinner to close
+winEl.WaitElementNotExist({Type: "Window", Name: "Loading..."}, 10000)
+\`\`\`
+
+### Safe Existence Check
+\`\`\`ahk
+; Non-throwing check — returns 0 if not found instead of throwing
+el := winEl.ElementExist({Type: "Button", Name: "OptionalButton"})
+if el
+    el.Click()
+\`\`\`
+
+### DumpAll for Deep Exploration
+\`\`\`ahk
+; Dump the entire tree to a string for analysis
+dump := winEl.DumpAll()
+FileAppend(dump, "tree_dump.txt")
+\`\`\`
+
 ### Error Handling
 \`\`\`ahk
 try {

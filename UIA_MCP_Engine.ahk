@@ -1346,6 +1346,540 @@ _HandleGetElementAtPoint(params)
 }
 
 ; ══════════════════════════════════════════════════════════════════
+;  Action & Catalog Handlers (Phase 1+2 tools)
+; ══════════════════════════════════════════════════════════════════
+
+/**
+ * uia_get_type_catalog — return all valid UIA control type names and their integer IDs.
+ *
+ * @returns {Object} Object with type name → integer ID mappings
+ */
+_HandleGetTypeCatalog(params)
+{
+    global UIA_Type
+    types := Map()
+    ; Enumerate all type constants from the UIA library
+    try
+    {
+        for name, id in UIA_Type.OwnProps()
+            types[name] := id
+    }
+    return types
+}
+
+/**
+ * uia_get_pattern_catalog — return all available UIA patterns with their methods and properties.
+ *
+ * @returns {Object} Object with pattern name → {methods, properties} mappings
+ */
+_HandleGetPatternCatalog(params)
+{
+    catalog := Map()
+
+    catalog["Invoke"] := {methods: ["Invoke"]}
+
+    catalog["Toggle"] := {
+        methods: ["Toggle"],
+        properties: ["ToggleState"]
+    }
+
+    catalog["ExpandCollapse"] := {
+        methods: ["Expand", "Collapse"],
+        properties: ["ExpandCollapseState"]
+    }
+
+    catalog["Value"] := {
+        methods: ["SetValue"],
+        properties: ["Value", "IsReadOnly"]
+    }
+
+    catalog["SelectionItem"] := {
+        methods: ["Select", "AddToSelection", "RemoveFromSelection"],
+        properties: ["IsSelected", "SelectionContainer"]
+    }
+
+    catalog["Selection"] := {
+        methods: ["GetSelection"],
+        properties: ["CanSelectMultiple", "IsSelectionRequired"]
+    }
+
+    catalog["Scroll"] := {
+        methods: ["Scroll", "SetScrollPercent", "ScrollIntoView"],
+        properties: ["HorizontalScrollPercent", "VerticalScrollPercent",
+                     "HorizontalViewSize", "VerticalViewSize",
+                     "HorizontallyScrollable", "VerticallyScrollable"]
+    }
+
+    catalog["Grid"] := {
+        methods: ["GetItem"],
+        properties: ["RowCount", "ColumnCount"]
+    }
+
+    catalog["GridItem"] := {
+        properties: ["Row", "Column", "RowSpan", "ColumnSpan", "ContainingGrid"]
+    }
+
+    catalog["Table"] := {
+        methods: ["GetRowHeaders", "GetColumnHeaders"],
+        properties: ["RowOrColumnMajor"]
+    }
+
+    catalog["TableItem"] := {
+        methods: ["GetRowHeaderItems", "GetColumnHeaderItems"]
+    }
+
+    catalog["Window"] := {
+        methods: ["Close", "WaitForInputIdle", "SetWindowVisualState"],
+        properties: ["CanMaximize", "CanMinimize", "IsModal", "IsTopmost",
+                     "WindowVisualState", "WindowInteractionState"]
+    }
+
+    catalog["Transform"] := {
+        methods: ["Move", "Resize", "Rotate"],
+        properties: ["CanMove", "CanResize", "CanRotate"]
+    }
+
+    catalog["RangeValue"] := {
+        methods: ["SetValue"],
+        properties: ["Value", "IsReadOnly", "Maximum", "Minimum",
+                     "LargeChange", "SmallChange"]
+    }
+
+    catalog["Dock"] := {
+        methods: ["SetDockPosition"],
+        properties: ["DockPosition"]
+    }
+
+    catalog["MultipleView"] := {
+        methods: ["GetViewName", "SetView"],
+        properties: ["CurrentView"]
+    }
+
+    catalog["LegacyIAccessible"] := {
+        methods: ["Select", "DoDefaultAction", "SetValue"],
+        properties: ["ChildId", "Name", "Value", "Description", "Role", "State"]
+    }
+
+    catalog["Text"] := {
+        methods: ["RangeFromPoint", "RangeFromChild", "GetSelection", "GetVisibleRanges"],
+        properties: ["DocumentRange", "SupportedTextSelection"]
+    }
+
+    catalog["Drag"] := {
+        properties: ["IsGrabbed", "DropEffect", "DropEffects"]
+    }
+
+    catalog["DropTarget"] := {
+        properties: ["DropTargetEffect", "DropTargetEffects"]
+    }
+
+    catalog["ScrollItem"] := {
+        methods: ["ScrollIntoView"]
+    }
+
+    return catalog
+}
+
+/**
+ * uia_perform_action — execute an action on a resolved UIA element.
+ *
+ * Supported actions: Invoke, Toggle, Click, Expand, Collapse, Select,
+ * ScrollIntoView, SetFocus, Highlight, SetValue.
+ *
+ * @param {Object} params - locator + action + optional value
+ * @returns {Object} Result with success flag and action performed
+ */
+_HandlePerformAction(params)
+{
+    el := _ResolveLocator(params)
+
+    action := params.Has("action") ? params["action"] : ""
+    if (action = "")
+        throw Error("action is required")
+
+    value := params.Has("value") ? params["value"] : ""
+
+    switch action
+    {
+    case "Invoke":
+        try el.Invoke()
+        catch as invokeErr
+            throw Error("Invoke failed: " invokeErr.Message)
+        return {success: true, action: "Invoke"}
+
+    case "Toggle":
+        try el.Toggle()
+        catch as toggleErr
+            throw Error("Toggle failed: " toggleErr.Message)
+        return {success: true, action: "Toggle"}
+
+    case "Click":
+        try el.Click()
+        catch as clickErr
+            throw Error("Click failed: " clickErr.Message)
+        return {success: true, action: "Click"}
+
+    case "Expand":
+        try el.Expand()
+        catch as expandErr
+            throw Error("Expand failed: " expandErr.Message)
+        return {success: true, action: "Expand"}
+
+    case "Collapse":
+        try el.Collapse()
+        catch as collapseErr
+            throw Error("Collapse failed: " collapseErr.Message)
+        return {success: true, action: "Collapse"}
+
+    case "Select":
+        try el.Select()
+        catch as selectErr
+            throw Error("Select failed: " selectErr.Message)
+        return {success: true, action: "Select"}
+
+    case "ScrollIntoView":
+        try el.ScrollIntoView()
+        catch as scrollErr
+            throw Error("ScrollIntoView failed: " scrollErr.Message)
+        return {success: true, action: "ScrollIntoView"}
+
+    case "SetFocus":
+        try el.SetFocus()
+        catch as focusErr
+            throw Error("SetFocus failed: " focusErr.Message)
+        return {success: true, action: "SetFocus"}
+
+    case "Highlight":
+        try el.Highlight()
+        catch as hlErr
+            throw Error("Highlight failed: " hlErr.Message)
+        return {success: true, action: "Highlight"}
+
+    case "SetValue":
+        if (value = "")
+            throw Error("value is required for SetValue action")
+        try el.SetValue(value)
+        catch as svErr
+            throw Error("SetValue failed: " svErr.Message)
+        return {success: true, action: "SetValue", value: value}
+
+    default:
+        throw Error("Unknown action: " action
+            . ". Supported: Invoke, Toggle, Click, Expand, Collapse, Select, ScrollIntoView, SetFocus, Highlight, SetValue")
+    }
+}
+
+/**
+ * uia_set_value — set the value of a UIA element (Edit field, checkbox, etc.).
+ *
+ * @param {Object} params - locator + value
+ * @returns {Object} Result with success flag
+ */
+_HandleSetValue(params)
+{
+    el := _ResolveLocator(params)
+
+    if (!params.Has("value"))
+        throw Error("value is required")
+
+    value := params["value"]
+    try el.SetValue(value)
+    catch as err
+        throw Error("SetValue failed: " err.Message)
+
+    return {success: true, value: value}
+}
+
+/**
+ * uia_highlight_element — draw a colored highlight border around an element.
+ *
+ * @param {Object} params - locator + optional duration (ms) and color
+ * @returns {Object} Result with success flag
+ */
+_HandleHighlightElement(params)
+{
+    el := _ResolveLocator(params)
+
+    duration := params.Has("duration") ? params["duration"] : 2000
+    color := params.Has("color") ? params["color"] : ""
+
+    try
+    {
+        if (color != "")
+            el.Highlight(duration, color)
+        else
+            el.Highlight(duration)
+    }
+    catch as err
+        throw Error("Highlight failed: " err.Message)
+
+    return {success: true, duration: duration}
+}
+
+/**
+ * uia_dump_tree — return a comprehensive text dump of an element and its descendants.
+ *
+ * @param {Object} params - locator (hwnd required, or uses focused element)
+ * @returns {Object} Result with formatted dump string
+ */
+_HandleDumpTree(params)
+{
+    hwnd := params.Has("hwnd") ? params["hwnd"] : 0
+    maxDepth := params.Has("maxDepth") ? params["maxDepth"] : 0
+
+    el := 0
+    if (hwnd)
+    {
+        cr := _MakeCacheRequest()
+        el := UIA.ElementFromHandle(hwnd, cr)
+    }
+    else
+    {
+        el := UIA.GetFocusedElement()
+    }
+    if (!el)
+        throw Error("Could not resolve element for dump")
+
+    try
+    {
+        if (maxDepth > 0)
+            dump := el.DumpAll("`n", maxDepth)
+        else
+            dump := el.DumpAll()
+        return {dump: dump}
+    }
+    catch as err
+        throw Error("DumpAll failed: " err.Message)
+}
+
+/**
+ * uia_wait_element_not_exist — poll until an element matching condition disappears or timeout.
+ *
+ * @param {Object} params - must include condition; optional hwnd, timeout
+ * @returns {Object} Result with gone flag and elapsed ms
+ */
+_HandleWaitElementNotExist(params)
+{
+    timeout := params.Has("timeout") ? params["timeout"] : 5000
+    hwnd := params.Has("hwnd") ? params["hwnd"] : 0
+    condObj := params.Has("condition") ? params["condition"] : {}
+
+    condMap := _BuildCondition(condObj)
+    if (condMap = "")
+        throw Error("condition is required")
+
+    scope := _ResolveScope(params.Has("scope") ? params["scope"] : "Descendants")
+    matchMode := _ResolveMatchMode(params.Has("matchMode") ? params["matchMode"] : "Exact")
+
+    root := 0
+    if (hwnd)
+    {
+        cr := _MakeCacheRequest()
+        root := UIA.ElementFromHandle(hwnd, cr)
+    }
+    else
+    {
+        root := UIA.GetFocusedElement()
+    }
+    if (!root)
+        throw Error("Could not resolve root")
+
+    start := A_TickCount
+    loop
+    {
+        try
+        {
+            matches := root.FindAll(condMap, matchMode, scope)
+            if (!IsObject(matches) || matches.Length = 0)
+            {
+                return {
+                    gone: true,
+                    elapsed: A_TickCount - start
+                }
+            }
+        }
+        if (A_TickCount - start >= timeout)
+            break
+        Sleep(100)
+    }
+
+    return {
+        gone: false,
+        elapsed: A_TickCount - start
+    }
+}
+
+/**
+ * uia_element_exists — check if an element matching condition exists without throwing.
+ *
+ * @param {Object} params - must include condition; optional hwnd, scope, matchMode
+ * @returns {Object} Result with exists flag
+ */
+_HandleElementExists(params)
+{
+    root := 0
+    if (params.Has("hwnd") && params["hwnd"])
+    {
+        cr := _MakeCacheRequest()
+        root := UIA.ElementFromHandle(params["hwnd"], cr)
+    }
+    else
+    {
+        root := UIA.GetFocusedElement()
+    }
+    if (!root)
+        return {exists: false}
+
+    condMap := _BuildCondition(params.Has("condition") ? params["condition"] : {})
+    if (condMap = "")
+        return {exists: false}
+
+    scope := _ResolveScope(params.Has("scope") ? params["scope"] : "Descendants")
+    matchMode := _ResolveMatchMode(params.Has("matchMode") ? params["matchMode"] : "Exact")
+
+    try
+    {
+        matches := root.FindAll(condMap, matchMode, scope)
+        if (IsObject(matches) && matches.Length > 0)
+        {
+            summary := _ElementSummary(matches[1])
+            return {
+                exists: true,
+                count: matches.Length,
+                example: summary
+            }
+        }
+        return {exists: false, count: 0}
+    }
+    catch
+    {
+        return {exists: false, count: 0}
+    }
+}
+
+; ══════════════════════════════════════════════════════════════════
+;  Phase 3 Handlers — path navigation, root element, Chromium
+; ══════════════════════════════════════════════════════════════════
+
+/**
+ * uia_get_element_from_path — navigate the UIA tree using path syntax.
+ *
+ * Supports comma-separated numeric paths ("3,2" = third child's second child),
+ * UIAViewer-encoded paths ("bAx3"), or condition arrays.
+ *
+ * @param {Object} params - must include hwnd and path
+ * @returns {Map} Full element result for the element at the path
+ */
+_HandleGetElementFromPath(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
+        throw Error("hwnd is required for get_element_from_path")
+
+    if (!params.Has("path") || params["path"] = "")
+        throw Error("path is required for get_element_from_path")
+
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+
+    path := params["path"]
+
+    cr := _MakeCacheRequest()
+    windowEl := UIA.ElementFromHandle(hwnd, cr)
+
+    el := 0
+    try
+    {
+        ; The ElementFromPath method accepts string paths like "3,2",
+        ; UIAViewer-encoded paths like "bAx3", or condition arrays
+        el := windowEl.ElementFromPath(path)
+    }
+    catch as err
+        throw Error("ElementFromPath failed: " err.Message . " — path: " path)
+
+    if (!el)
+        throw Error("No element found at path: " path)
+
+    targetPid := WinGetPID("ahk_id " hwnd)
+    return _BuildFullElementResult(el, windowEl, hwnd, targetPid)
+}
+
+/**
+ * uia_get_root_element — get the desktop root element for cross-application searches.
+ *
+ * @returns {Map} Element summary for the desktop root
+ */
+_HandleGetRootElement(params)
+{
+    global UIA
+    try
+    {
+        root := UIA.GetRootElement()
+        if (!root)
+            throw Error("GetRootElement returned nothing")
+
+        return {
+            Type:         _PropStr(root, 30003),
+            Name:         _PropStr(root, 30005),
+            AutomationId: _PropStr(root, 30011),
+            ClassName:    _PropStr(root, 30012),
+            FrameworkId:  _PropStr(root, 30024),
+            IsEnabled:    _PropBool(root, 30010),
+            ProcessId:    _PropInt(root, 30002),
+            NativeWindowHandle: _PropHwnd(root, 30020)
+        }
+    }
+    catch as err
+        throw Error("GetRootElement failed: " err.Message)
+}
+
+/**
+ * uia_element_from_chromium — get the Chromium content element for browser automation.
+ *
+ * Activates Chromium accessibility and returns the render widget element
+ * (Chrome_RenderWidgetHostHWND1) for Chrome/Edge/Brave.
+ *
+ * @param {Object} params - must include hwnd of the browser window
+ * @returns {Map} Full element result for the Chromium content element
+ */
+_HandleElementFromChromium(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
+        throw Error("hwnd is required for element_from_chromium")
+
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+
+    targetPid := WinGetPID("ahk_id " hwnd)
+
+    if (!_IsBrowserProcess(targetPid))
+        throw Error("The specified window is not a known browser process")
+
+    try
+    {
+        UIA.ActivateChromiumAccessibility(hwnd)
+    }
+    catch as err
+        throw Error("ActivateChromiumAccessibility failed: " err.Message)
+
+    cr := _MakeCacheRequest()
+    el := 0
+    try
+    {
+        el := UIA.ElementFromChromium(hwnd, false, cr)
+    }
+    catch as err
+        throw Error("ElementFromChromium failed: " err.Message)
+
+    if (!el)
+        throw Error("Could not get Chromium content element — browser may not have accessibility enabled")
+
+    windowEl := UIA.ElementFromHandle(hwnd, cr)
+    return _BuildFullElementResult(el, windowEl, hwnd, targetPid)
+}
+
+; ══════════════════════════════════════════════════════════════════
 ;  Full Element Result Builder (used by multiple handlers)
 ; ══════════════════════════════════════════════════════════════════
 
@@ -1420,6 +1954,17 @@ _HandleRequest(jsonStr)
         "wait_for_element",     _HandleWaitForElement,     ; legacy alias
         "get_element_at_point", _HandleGetElementAtPoint,  ; legacy alias
         "get_full_element",     _HandleGetElementProperties,  ; alias
+        "uia_get_type_catalog",     _HandleGetTypeCatalog,
+        "uia_get_pattern_catalog",  _HandleGetPatternCatalog,
+        "uia_perform_action",       _HandlePerformAction,
+        "uia_set_value",            _HandleSetValue,
+        "uia_highlight_element",    _HandleHighlightElement,
+        "uia_dump_tree",            _HandleDumpTree,
+        "uia_wait_element_not_exist",   _HandleWaitElementNotExist,
+        "uia_element_exists",       _HandleElementExists,
+        "uia_get_element_from_path", _HandleGetElementFromPath,
+        "uia_get_root_element",      _HandleGetRootElement,
+        "uia_element_from_chromium", _HandleElementFromChromium,
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )
 

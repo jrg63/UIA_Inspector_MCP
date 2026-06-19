@@ -14,8 +14,8 @@ import {
 // ── Tests: Tool Name Registry ──────────────────────────────────
 
 describe("Tool Name Registry", () => {
-    test("all 15 tools are in TOOL_NAMES", () => {
-        expect(TOOL_NAMES).toHaveLength(15);
+    test("all 26 tools are in TOOL_NAMES", () => {
+        expect(TOOL_NAMES).toHaveLength(26);
     });
 
     test("TOOL_NAMES has no duplicates", () => {
@@ -46,8 +46,8 @@ describe("Tool Definitions", () => {
         tools = buildToolDefinitions();
     });
 
-    test("generates exactly 15 tool definitions", () => {
-        expect(tools).toHaveLength(15);
+    test("generates exactly 26 tool definitions", () => {
+        expect(tools).toHaveLength(26);
     });
 
     test("every tool has a name, description, and inputSchema", () => {
@@ -172,6 +172,85 @@ describe("Tool Definitions", () => {
         expect(fe.inputSchema.properties["index"]).toBeDefined();
         expect(fe.inputSchema.properties["index"].type).toBe("number");
         expect(fe.inputSchema.required).not.toContain("index");
+    });
+
+    // ── New Phase 1+2 tool tests ──────────────────────────
+
+    test("uia_get_type_catalog has no required params", () => {
+        const tc = tools.find((t) => t.name === "uia_get_type_catalog")!;
+        expect(tc).toBeDefined();
+        expect(tc.inputSchema.required).toEqual([]);
+    });
+
+    test("uia_get_pattern_catalog has no required params", () => {
+        const pc = tools.find((t) => t.name === "uia_get_pattern_catalog")!;
+        expect(pc).toBeDefined();
+        expect(pc.inputSchema.required).toEqual([]);
+    });
+
+    test("uia_perform_action requires action", () => {
+        const pa = tools.find((t) => t.name === "uia_perform_action")!;
+        expect(pa.inputSchema.required).toContain("action");
+        expect(pa.inputSchema.properties["action"].enum).toContain("Invoke");
+        expect(pa.inputSchema.properties["action"].enum).toContain("SetValue");
+        expect(pa.inputSchema.properties["action"].enum).toContain("Highlight");
+    });
+
+    test("uia_perform_action action enum has all 10 values", () => {
+        const pa = tools.find((t) => t.name === "uia_perform_action")!;
+        expect(pa.inputSchema.properties["action"].enum).toHaveLength(10);
+    });
+
+    test("uia_set_value requires value", () => {
+        const sv = tools.find((t) => t.name === "uia_set_value")!;
+        expect(sv.inputSchema.required).toContain("value");
+    });
+
+    test("uia_highlight_element has optional duration and color", () => {
+        const hl = tools.find((t) => t.name === "uia_highlight_element")!;
+        expect(hl.inputSchema.properties["duration"]).toBeDefined();
+        expect(hl.inputSchema.properties["duration"].type).toBe("number");
+        expect(hl.inputSchema.properties["color"]).toBeDefined();
+        expect(hl.inputSchema.properties["color"].type).toBe("string");
+        expect(hl.inputSchema.required).toEqual([]);
+    });
+
+    test("uia_dump_tree has optional hwnd and maxDepth", () => {
+        const dt = tools.find((t) => t.name === "uia_dump_tree")!;
+        expect(dt.inputSchema.properties["hwnd"]).toBeDefined();
+        expect(dt.inputSchema.properties["maxDepth"]).toBeDefined();
+        expect(dt.inputSchema.required).toEqual([]);
+    });
+
+    test("uia_wait_element_not_exist requires condition", () => {
+        const wne = tools.find((t) => t.name === "uia_wait_element_not_exist")!;
+        expect(wne.inputSchema.required).toContain("condition");
+    });
+
+    test("uia_element_exists requires condition", () => {
+        const ee = tools.find((t) => t.name === "uia_element_exists")!;
+        expect(ee.inputSchema.required).toContain("condition");
+    });
+
+    // ── Phase 3 tool tests ──────────────────────────
+
+    test("uia_get_element_from_path requires hwnd and path", () => {
+        const fp = tools.find((t) => t.name === "uia_get_element_from_path")!;
+        expect(fp).toBeDefined();
+        expect(fp.inputSchema.required).toContain("hwnd");
+        expect(fp.inputSchema.required).toContain("path");
+    });
+
+    test("uia_get_root_element has no required params", () => {
+        const re = tools.find((t) => t.name === "uia_get_root_element")!;
+        expect(re).toBeDefined();
+        expect(re.inputSchema.required).toEqual([]);
+    });
+
+    test("uia_element_from_chromium requires hwnd", () => {
+        const efc = tools.find((t) => t.name === "uia_element_from_chromium")!;
+        expect(efc).toBeDefined();
+        expect(efc.inputSchema.required).toContain("hwnd");
     });
 });
 

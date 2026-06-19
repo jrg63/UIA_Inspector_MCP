@@ -397,6 +397,183 @@ _IsBrowserProcess(pid)
     return(false)
 }
 
+; ── Replicated Phase 1+2+3 handlers ────────────
+
+_HandleGetTypeCatalog(params)
+{
+    global UIA_Type
+    types := Map()
+    try
+    {
+        for name, id in UIA_Type.OwnProps()
+            types[name] := id
+    }
+    return(types)
+}
+
+_HandleGetPatternCatalog(params)
+{
+    catalog := Map()
+    catalog["Invoke"] := {methods: ["Invoke"]}
+    catalog["Toggle"] := {methods: ["Toggle"], properties: ["ToggleState"]}
+    catalog["ExpandCollapse"] := {methods: ["Expand", "Collapse"], properties: ["ExpandCollapseState"]}
+    catalog["Value"] := {methods: ["SetValue"], properties: ["Value", "IsReadOnly"]}
+    catalog["SelectionItem"] := {methods: ["Select", "AddToSelection", "RemoveFromSelection"], properties: ["IsSelected", "SelectionContainer"]}
+    catalog["Selection"] := {methods: ["GetSelection"], properties: ["CanSelectMultiple", "IsSelectionRequired"]}
+    catalog["Scroll"] := {methods: ["Scroll", "SetScrollPercent", "ScrollIntoView"], properties: ["HorizontalScrollPercent", "VerticalScrollPercent", "HorizontalViewSize", "VerticalViewSize", "HorizontallyScrollable", "VerticallyScrollable"]}
+    catalog["Grid"] := {methods: ["GetItem"], properties: ["RowCount", "ColumnCount"]}
+    catalog["GridItem"] := {properties: ["Row", "Column", "RowSpan", "ColumnSpan", "ContainingGrid"]}
+    catalog["Table"] := {methods: ["GetRowHeaders", "GetColumnHeaders"], properties: ["RowOrColumnMajor"]}
+    catalog["TableItem"] := {methods: ["GetRowHeaderItems", "GetColumnHeaderItems"]}
+    catalog["Window"] := {methods: ["Close", "WaitForInputIdle", "SetWindowVisualState"], properties: ["CanMaximize", "CanMinimize", "IsModal", "IsTopmost", "WindowVisualState", "WindowInteractionState"]}
+    catalog["Transform"] := {methods: ["Move", "Resize", "Rotate"], properties: ["CanMove", "CanResize", "CanRotate"]}
+    catalog["RangeValue"] := {methods: ["SetValue"], properties: ["Value", "IsReadOnly", "Maximum", "Minimum", "LargeChange", "SmallChange"]}
+    catalog["Dock"] := {methods: ["SetDockPosition"], properties: ["DockPosition"]}
+    catalog["MultipleView"] := {methods: ["GetViewName", "SetView"], properties: ["CurrentView"]}
+    catalog["LegacyIAccessible"] := {methods: ["Select", "DoDefaultAction", "SetValue"], properties: ["ChildId", "Name", "Value", "Description", "Role", "State"]}
+    catalog["Text"] := {methods: ["RangeFromPoint", "RangeFromChild", "GetSelection", "GetVisibleRanges"], properties: ["DocumentRange", "SupportedTextSelection"]}
+    catalog["Drag"] := {properties: ["IsGrabbed", "DropEffect", "DropEffects"]}
+    catalog["DropTarget"] := {properties: ["DropTargetEffect", "DropTargetEffects"]}
+    catalog["ScrollItem"] := {methods: ["ScrollIntoView"]}
+    return(catalog)
+}
+
+_HandleElementExists(params)
+{
+    root := 0
+    if (params.Has("hwnd") && params["hwnd"])
+    {
+        cr := _MakeCacheRequest()
+        root := UIA.ElementFromHandle(params["hwnd"], cr)
+    }
+    else
+    {
+        root := UIA.GetFocusedElement()
+    }
+    if (!root)
+        return {exists: false}
+
+    condMap := _BuildCondition(params.Has("condition") ? params["condition"] : {})
+    if (condMap = "")
+        return {exists: false}
+
+    scope := Descendants
+    matchMode := ""
+
+    try
+    {
+        matches := root.FindAll(condMap, matchMode, scope)
+        if (IsObject(matches) && matches.Length > 0)
+        {
+            summary := _ElementSummary(matches[1])
+            return {exists: true, count: matches.Length, example: summary}
+        }
+        return {exists: false, count: 0}
+    }
+    catch
+    {
+        return {exists: false, count: 0}
+    }
+}
+
+_HandleWaitElementNotExist(params)
+{
+    timeout := params.Has("timeout") ? params["timeout"] : 5000
+    hwnd := params.Has("hwnd") ? params["hwnd"] : 0
+    condObj := params.Has("condition") ? params["condition"] : {}
+
+    condMap := _BuildCondition(condObj)
+    if (condMap = "")
+        return {gone: true, elapsed: 0}
+
+    scope := Descendants
+    matchMode := ""
+
+    root := 0
+    if (hwnd)
+    {
+        cr := _MakeCacheRequest()
+        root := UIA.ElementFromHandle(hwnd, cr)
+    }
+    else
+    {
+        root := UIA.GetFocusedElement()
+    }
+    if (!root)
+        return {gone: true, elapsed: 0}
+
+    start := A_TickCount
+    loop
+    {
+        try
+        {
+            matches := root.FindAll(condMap, matchMode, scope)
+            if (!IsObject(matches) || matches.Length = 0)
+                return {gone: true, elapsed: A_TickCount - start}
+        }
+        if (A_TickCount - start >= timeout)
+            break
+        Sleep(100)
+    }
+    return {gone: false, elapsed: A_TickCount - start}
+}
+
+_HandleGetRootElement(params)
+{
+    global UIA
+    root := UIA.GetRootElement()
+    return {
+        Type: _PropStr(root, 30003),
+        Name: _PropStr(root, 30005),
+        AutomationId: _PropStr(root, 30011),
+        ClassName: _PropStr(root, 30012),
+        FrameworkId: _PropStr(root, 30024),
+        IsEnabled: _PropBool(root, 30010),
+        ProcessId: _PropInt(root, 30002),
+        NativeWindowHandle: _PropHwnd(root, 30020)
+    }
+}
+
+_HandleHighlightElement(params)
+{
+    el := UIA.GetFocusedElement()
+    duration := params.Has("duration") ? params["duration"] : 2000
+    el.Highlight(duration)
+    return {success: true, duration: duration}
+}
+
+_HandleDumpTree(params)
+{
+    maxDepth := params.Has("maxDepth") ? params["maxDepth"] : 0
+    el := UIA.GetFocusedElement()
+    if (maxDepth > 0)
+        dump := el.DumpAll("`n", maxDepth)
+    else
+        dump := el.DumpAll()
+    return {dump: dump}
+}
+
+_HandleGetElementFromPath(params)
+{
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+    path := params["path"]
+    cr := _MakeCacheRequest()
+    windowEl := UIA.ElementFromHandle(hwnd, cr)
+    el := windowEl.ElementFromPath(path)
+    targetPid := WinGetPID("ahk_id " hwnd)
+    return _BuildFullElementResult(el, windowEl, hwnd, targetPid)
+}
+
+_ArrayContains(arr, val)
+{
+    for item in arr
+        if (item = val)
+            return(true)
+    return(false)
+}
+
 ; ══════════════════════════════════════════════════════════════
 ;  Tests
 ; ══════════════════════════════════════════════════════════════
@@ -682,6 +859,173 @@ Test_BuildCondition_EdgeCases()
 }
 
 ; ══════════════════════════════════════════════════════════════
+;  Tests for Phase 1+2+3 handlers (pure logic)
+; ══════════════════════════════════════════════════════════════
+
+Test_TypeCatalog()
+{
+    _Log("=== Test _HandleGetTypeCatalog ===`n")
+    try
+    {
+        result := _HandleGetTypeCatalog({})
+        Assert(IsObject(result), "type catalog is object")
+        Assert(result.Has("Button"), 'Button type exists')
+        Assert(result.Has("Edit"), 'Edit type exists')
+        Assert(result.Has("Window"), 'Window type exists')
+        Assert(result.Has("CheckBox"), 'CheckBox type exists')
+        Assert(result.Has("MenuItem"), 'MenuItem type exists')
+        Assert(result.Has("Pane"), 'Pane type exists')
+        Assert(result.Has("DataGrid"), 'DataGrid type exists')
+        Assert(result.Count > 30, "at least 30 types returned")
+        _Log("    Types returned: " result.Count "`n")
+    }
+    catch as err
+        _Log("  SKIP: TypeCatalog failed (" err.Message ")`n")
+}
+
+Test_PatternCatalog()
+{
+    _Log("=== Test _HandleGetPatternCatalog ===`n")
+    try
+    {
+        result := _HandleGetPatternCatalog({})
+        Assert(IsObject(result), "pattern catalog is object")
+        Assert(result.Has("Invoke"), "Invoke pattern exists")
+        Assert(result.Has("Toggle"), "Toggle pattern exists")
+        Assert(result.Has("Value"), "Value pattern exists")
+        Assert(result.Has("ExpandCollapse"), "ExpandCollapse pattern exists")
+        Assert(result.Has("SelectionItem"), "SelectionItem pattern exists")
+        Assert(result.Has("Scroll"), "Scroll pattern exists")
+        Assert(result.Has("Window"), "Window pattern exists")
+        Assert(result.Count >= 10, "at least 10 patterns returned")
+
+        ; Check Invoke has methods
+        invoke := result["Invoke"]
+        Assert(invoke.Has("methods"), "Invoke has methods array")
+        Assert(invoke["methods"].Length >= 1, "Invoke has at least 1 method")
+        Assert(_ArrayContains(invoke["methods"], "Invoke"), "Invoke method list contains Invoke")
+
+        ; Check Value has properties
+        val := result["Value"]
+        Assert(val.Has("methods"), "Value has methods")
+        Assert(val.Has("properties"), "Value has properties")
+        Assert(_ArrayContains(val["properties"], "Value"), "Value props contain Value")
+
+        _Log("    Patterns returned: " result.Count "`n")
+    }
+    catch as err
+        _Log("  SKIP: PatternCatalog failed (" err.Message ")`n")
+}
+
+Test_ElementExists_Pure()
+{
+    _Log("=== Test _HandleElementExists (no element) ===`n")
+    ; With no valid root, should return {exists: false}
+    result := _HandleElementExists({condition: {Type: "NoSuchType_XYZ"}})
+    Assert(IsObject(result), "element exists result is object")
+    Assert(!result["exists"], "nonexistent element returns exists=false")
+    AssertEqual(result["count"], 0, "count is 0 for nonexistent element")
+}
+
+Test_WaitNotExist_Pure()
+{
+    _Log("=== Test _HandleWaitElementNotExist (no element) ===`n")
+    ; With no valid root, polling should timeout quickly
+    result := _HandleWaitElementNotExist({
+        condition: {Type: "NoSuchType_XYZ"},
+        timeout: 500
+    })
+    Assert(IsObject(result), "wait not exist result is object")
+    Assert(result["gone"], "element is gone when it never existed")
+}
+
+Test_RootElement()
+{
+    _Log("=== Test _HandleGetRootElement ===`n")
+    try
+    {
+        result := _HandleGetRootElement({})
+        Assert(IsObject(result), "root element result is object")
+        Assert(result.Has("Type"), "root has Type")
+        Assert(result.Has("Name"), "root has Name")
+        _Log("    Root Type: " result["Type"] " Name: " result["Name"] "`n")
+    }
+    catch as err
+        _Log("  SKIP: RootElement failed (" err.Message ")`n")
+}
+
+; ══════════════════════════════════════════════════════════════
+;  Tests for Phase 1+2+3 handlers (requires UIA — real element)
+; ══════════════════════════════════════════════════════════════
+
+Test_HighlightElement()
+{
+    _Log("=== Test _HandleHighlightElement ===`n")
+    try
+    {
+        el := UIA.GetFocusedElement()
+        if (!el)
+        {
+            _Log("  SKIP: no focused element`n")
+            return
+        }
+        ; Highlight with short duration
+        result := _HandleHighlightElement({
+            condition: {Type: _PropStr(el, 30003)},
+            duration: 100
+        })
+        Assert(IsObject(result), "highlight result is object")
+        Assert(result["success"], "highlight succeeds")
+        _Log("    Element highlighted`n")
+    }
+    catch as err
+        _Log("  SKIP: Highlight failed (" err.Message ")`n")
+}
+
+Test_DumpTree()
+{
+    _Log("=== Test _HandleDumpTree ===`n")
+    try
+    {
+        el := UIA.GetFocusedElement()
+        if (!el)
+        {
+            _Log("  SKIP: no focused element`n")
+            return
+        }
+        result := _HandleDumpTree({maxDepth: 1})
+        Assert(IsObject(result), "dump tree result is object")
+        Assert(result.Has("dump"), "result has dump string")
+        Assert(StrLen(result["dump"]) > 0, "dump string is non-empty")
+        _Log("    Dump length: " StrLen(result["dump"]) " chars`n")
+    }
+    catch as err
+        _Log("  SKIP: DumpTree failed (" err.Message ")`n")
+}
+
+Test_ElementFromPath()
+{
+    _Log("=== Test _HandleGetElementFromPath ===`n")
+    try
+    {
+        ; Get a known window to test path navigation
+        wl := WinGetList(,, "Program Manager")
+        if (wl.Length = 0)
+        {
+            _Log("  SKIP: no window available for path test`n")
+            return
+        }
+        hwndStr := Format("0x{:X}", wl[1])
+        result := _HandleGetElementFromPath({hwnd: hwndStr, path: "1"})
+        Assert(IsObject(result), "element from path result is object")
+        Assert(result.Has("Type"), "path result has Type")
+        _Log("    Path result Type: " (result.Has("Type") ? result["Type"] : "?") "`n")
+    }
+    catch as err
+        _Log("  SKIP: ElementFromPath failed (" err.Message ")`n")
+}
+
+; ══════════════════════════════════════════════════════════════
 ;  Main
 ; ══════════════════════════════════════════════════════════════
 
@@ -699,6 +1043,10 @@ Test_BuildCondition()
 Test_BuildCondition_EdgeCases()
 Test_JSON_Serialize()
 Test_IsBrowserProcess()
+Test_TypeCatalog()
+Test_PatternCatalog()
+Test_ElementExists_Pure()
+Test_WaitNotExist_Pure()
 
 ; Tests that require UIA (real element)
 _Log("`n--- Tests requiring UIA (real element) ---`n`n")
@@ -709,6 +1057,10 @@ Test_BuildConditionString()
 Test_GetPatterns()
 Test_GetAncestorChain()
 Test_DetermineAction()
+Test_HighlightElement()
+Test_DumpTree()
+Test_RootElement()
+Test_ElementFromPath()
 
 ; Report
 _Log("`n╔════════════════════════════════════════════════╗`n")

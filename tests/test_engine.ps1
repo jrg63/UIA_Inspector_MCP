@@ -553,6 +553,112 @@ function Test-Elevation {
     }
 }
 
+function Test-Catalogs {
+    Write-Info "=== Catalog Tests ==="
+
+    # Type catalog
+    $r = Send-JsonRpc -Method "uia_get_type_catalog"
+    Assert-Result $r "type catalog returns data" {
+        $types = $args[0]
+        return ($null -ne $types.Button -and $null -ne $types.Edit -and $null -ne $types.Window)
+    }
+    if ($r.result) {
+        $typeCount = ($r.result | Get-Member -MemberType NoteProperty).Count
+        Write-Host "    Types returned: $typeCount" -ForegroundColor DarkGray
+    }
+
+    # Pattern catalog
+    $r = Send-JsonRpc -Method "uia_get_pattern_catalog"
+    Assert-Result $r "pattern catalog returns data" {
+        $patterns = $args[0]
+        return ($null -ne $patterns.Invoke -and $null -ne $patterns.Value -and $null -ne $patterns.Toggle)
+    }
+    if ($r.result) {
+        $patCount = ($r.result | Get-Member -MemberType NoteProperty).Count
+        Write-Host "    Patterns returned: $patCount" -ForegroundColor DarkGray
+    }
+}
+
+function Test-Actions {
+    Write-Info "=== Action Tests ==="
+
+    # Get a window HWND for testing
+    $win = Send-JsonRpc -Method "list_windows" -Params @{filter = "PowerShell"}
+    $hwnd = if ($win.result.windows.Count -gt 0) { $win.result.windows[0].hwnd } else { "" }
+
+    # Highlight element (no-op test, just verifies the call doesn't crash)
+    $r = Send-JsonRpc -Method "uia_highlight_element" -Params @{duration = 100}
+    Assert-NoError $r "highlight_element succeeds"
+
+    # Element exists — should find something at the focused element
+    $r = Send-JsonRpc -Method "uia_element_exists" -Params @{condition = @{Type = "Window"}}
+    Assert-NoError $r "element_exists with Window type"
+    if ($r.result -and $r.result.exists) {
+        Write-Host "    Found window: count=$($r.result.count)" -ForegroundColor DarkGray
+    }
+
+    # SetValue with missing value should error
+    $r = Send-JsonRpc -Method "uia_set_value" -Params @{}
+    Assert-Error $r "set_value without value errors"
+
+    # Perform action with missing action should error
+    $r = Send-JsonRpc -Method "uia_perform_action" -Params @{}
+    Assert-Error $r "perform_action without action errors"
+
+    # Root element
+    $r = Send-JsonRpc -Method "uia_get_root_element"
+    Assert-Result $r "root element has Type" {
+        return ($null -ne $args[0].Type)
+    }
+    if ($r.result) {
+        Write-Host "    Root: $($r.result.Type) '$($r.result.Name)'" -ForegroundColor DarkGray
+    }
+}
+
+function Test-Discovery {
+    Write-Info "=== Discovery Tests ==="
+
+    # Dump tree
+    $r = Send-JsonRpc -Method "uia_dump_tree" -Params @{maxDepth = 1}
+    Assert-Result $r "dump_tree returns dump string" {
+        return ($null -ne $args[0].dump -and $args[0].dump.Length -gt 0)
+    }
+    if ($r.result) {
+        Write-Host "    Dump length: $($r.result.dump.Length) chars" -ForegroundColor DarkGray
+    }
+
+    # Wait element not exist — with impossible condition, should resolve quickly
+    $r = Send-JsonRpc -Method "uia_wait_element_not_exist" -Params @{
+        condition = @{Type = "NoSuchType_XYZ"}
+        timeout = 500
+    }
+    Assert-Result $r "wait_element_not_exist returns gone=true" {
+        return ($args[0].gone -eq $true)
+    }
+
+    # Element from path — needs a real window
+    $win = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
+    if ($win.result.windows.Count -gt 0) {
+        $hwnd = $win.result.windows[0].hwnd
+        $r = Send-JsonRpc -Method "uia_get_element_from_path" -Params @{hwnd = $hwnd; path = "1"}
+        Assert-Result $r "element_from_path succeeds" {
+            return ($null -ne $args[0].Type)
+        }
+    }
+    else {
+        Write-Warn
+        Write-Host "    No window for path test" -ForegroundColor Yellow
+        $script:warned++
+    }
+
+    # Element from chromium — should fail gracefully on non-browser
+    if ($win.result.windows.Count -gt 0) {
+        $hwnd = $win.result.windows[0].hwnd
+        $r = Send-JsonRpc -Method "uia_element_from_chromium" -Params @{hwnd = $hwnd}
+        Assert-Error $r "chromium on non-browser errors"
+    }
+}
+
 # ═══════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════
@@ -622,6 +728,9 @@ try {
     Test-Elevation
     Test-Cursor
     Test-Wait
+    Test-Catalogs
+    Test-Actions
+    Test-Discovery
 }
 catch {
     Write-Host "Test suite threw: $_" -ForegroundColor Red
