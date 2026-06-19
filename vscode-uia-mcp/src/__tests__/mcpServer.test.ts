@@ -125,8 +125,8 @@ describe("Tool Definitions", () => {
         expect(cmc.inputSchema.required).toContain("condition");
     });
 
-    test("wait_for_element requires condition", () => {
-        const wfe = tools.find((t) => t.name === "wait_for_element")!;
+    test("inspect_element_wait requires condition", () => {
+        const wfe = tools.find((t) => t.name === "inspect_element_wait")!;
         expect(wfe.inputSchema.required).toContain("condition");
     });
 
@@ -135,8 +135,8 @@ describe("Tool Definitions", () => {
         expect(gwi.inputSchema.required).toContain("hwnd");
     });
 
-    test("get_element_at_point requires x and y", () => {
-        const gep = tools.find((t) => t.name === "get_element_at_point")!;
+    test("inspect_element_at_point requires x and y", () => {
+        const gep = tools.find((t) => t.name === "inspect_element_at_point")!;
         expect(gep.inputSchema.required).toContain("x");
         expect(gep.inputSchema.required).toContain("y");
     });
@@ -160,8 +160,8 @@ describe("Tool Definitions", () => {
         expect(lw.inputSchema.required).not.toContain("filter");
     });
 
-    test("wait_for_element has optional timeout number property", () => {
-        const wfe = tools.find((t) => t.name === "wait_for_element")!;
+    test("inspect_element_wait has optional timeout number property", () => {
+        const wfe = tools.find((t) => t.name === "inspect_element_wait")!;
         expect(wfe.inputSchema.properties["timeout"]).toBeDefined();
         expect(wfe.inputSchema.properties["timeout"].type).toBe("number");
         expect(wfe.inputSchema.required).not.toContain("timeout");

@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0.2+
+#Requires AutoHotkey v2.0.2+
 #SingleInstance
 
 ; ══════════════════════════════════════════════════════════════════
@@ -15,61 +15,77 @@
 global _pass := 0, _fail := 0
 global _logFile := A_Temp "\test_engine_internals.log"
 
-_Log(msg) {
+_Log(msg)
+{
     OutputDebug msg
     FileAppend(msg, _logFile)  ; write to temp log file for PowerShell visibility
 }
 
-Assert(cond, name) {
+Assert(cond, name)
+{
     global _pass, _fail
-    if cond {
+    if (cond) {
         _Log("  PASS: " name "`n")
         _pass++
-    } else {
+    }
+    else
+    {
         _Log("  FAIL: " name "`n")
         _fail++
     }
 }
 
-AssertEqual(actual, expected, name) {
+AssertEqual(actual, expected, name)
+{
     global _pass, _fail
-    if actual = expected {
+    if (actual = expected) {
         _Log("  PASS: " name "`n")
         _pass++
-    } else {
+    }
+    else
+    {
         _Log("  FAIL: " name " — expected '" expected "', got '" actual "'`n")
         _fail++
     }
 }
 
-AssertNotEqual(actual, unexpected, name) {
+AssertNotEqual(actual, unexpected, name)
+{
     global _pass, _fail
-    if actual != unexpected {
+    if (actual != unexpected) {
         _Log("  PASS: " name "`n")
         _pass++
-    } else {
+    }
+    else
+    {
         _Log("  FAIL: " name " — value is '" unexpected "'`n")
         _fail++
     }
 }
 
-AssertHas(obj, key, name) {
+AssertHas(obj, key, name)
+{
     global _pass, _fail
-    if IsObject(obj) && obj.Has(key) {
+    if (IsObject(obj) && obj.Has(key)) {
         _Log("  PASS: " name "`n")
         _pass++
-    } else {
+    }
+    else
+    {
         _Log("  FAIL: " name " — key '" key "' not found`n")
         _fail++
     }
 }
 
-AssertType(val, expectedType, name) {
+AssertType(val, expectedType, name)
+{
     global _pass, _fail
-    if Type(val) = expectedType {
+    if (Type(val) = expectedType) {
         _Log("  PASS: " name "`n")
         _pass++
-    } else {
+    }
+    else
+    {
         _Log("  FAIL: " name " — expected " expectedType ", got " Type(val) "`n")
         _fail++
     }
@@ -80,7 +96,8 @@ AssertType(val, expectedType, name) {
 ;  (these must match exactly what the engine uses)
 ; ══════════════════════════════════════════════════════════════
 
-_MakeCacheRequest() {
+_MakeCacheRequest()
+{
     cr := UIA.CreateCacheRequest()
     cr.TreeScope := UIA_TreeScope.Subtree
     for propId in [30002, 30003, 30004, 30005, 30006, 30007, 30009,
@@ -91,26 +108,29 @@ _MakeCacheRequest() {
     for propId in [30027, 30028, 30031, 30033, 30034, 30036, 30037,
                    30040, 30041, 30042, 30043, 30044, 30090]
         cr.AddProperty(propId)
-    return cr
+    return(cr)
 }
 
-_EscapeStr(s) {
+_EscapeStr(s)
+{
     s := StrReplace(s, "\", "\\")
     s := StrReplace(s, '"', '\"')
-    return s
+    return(s)
 }
 
-_Join(arr) {
+_Join(arr)
+{
     s := ""
     for i, v in arr
         s .= (i > 1 ? ", " : "") v
-    return s
+    return(s)
 }
 
-_BuildCondition(condObj) {
+_BuildCondition(condObj)
+{
     condMap := Map()
-    if !IsObject(condObj)
-        return ""
+    if (!IsObject(condObj))
+        return("")
     nameToId := Map(
         "Type", 30003,
         "LocalizedType", 30004,
@@ -122,58 +142,68 @@ _BuildCondition(condObj) {
         "AccessKey", 30007,
         "HelpText", 30013
     )
-    try {
-        for key, val in condObj.OwnProps() {
-            if val = ""
+    try
+    {
+        for key, val in condObj.OwnProps()
+        {
+            if (val = "")
                 continue
             propId := 0
-            if nameToId.Has(key)
+            if (nameToId.Has(key))
                 propId := nameToId[key]
             else {
                 try propId := Integer(key)
                 catch
                     propId := 0
             }
-            if propId
+            if (propId)
                 condMap[propId] := String(val)
         }
-    } catch {
-        return ""
     }
-    return condMap.Count ? condMap : ""
+    catch
+    {
+        return("")
+    }
+    return(condMap.Count ? condMap : "")
 }
 
-_BuildConditionString(el) {
+_BuildConditionString(el)
+{
     parts := []
-    try {
+    try
+    {
         typeId := el.Type
         typeName := UIA_Type.HasValue(typeId)
-        if typeName
+        if (typeName)
             parts.Push('Type: "' typeName '"')
     }
-    try {
+    try
+    {
         aid := el.AutomationId
-        if aid != "" {
+        if (aid != "") {
             parts.Push('AutomationId: "' _EscapeStr(String(aid)) '"')
-            return "{" _Join(parts) "}"
+            return("{" _Join(parts) "}")
         }
     }
-    try {
+    try
+    {
         name := el.Name
-        if name {
+        if (name) {
             parts.Push('Name: "' _EscapeStr(name) '"')
-            return "{" _Join(parts) "}"
+            return("{" _Join(parts) "}")
         }
     }
-    try {
+    try
+    {
         cn := el.ClassName
-        if cn
+        if (cn)
             parts.Push('ClassName: "' _EscapeStr(cn) '"')
     }
-    return parts.Length ? "{" _Join(parts) "}" : "{}"
+    return(parts.Length ? "{" _Join(parts) "}" : "{}")
 }
 
-_ElementToMap(el) {
+_ElementToMap(el)
+{
     m := Map()
     m["Type"]           := _PropStr(el, 30003)
     m["LocalizedType"]   := _PropStr(el, 30004)
@@ -190,9 +220,10 @@ _ElementToMap(el) {
     m["HelpText"]       := _PropStr(el, 30013)
     m["ItemType"]       := _PropStr(el, 30021)
     m["ItemStatus"]     := _PropStr(el, 30026)
-    try {
+    try
+    {
         raw := el.GetPropertyValue(30001)
-        if IsObject(raw)
+        if (IsObject(raw))
             m["BoundingRect"] := {left: raw.l, top: raw.t, right: raw.r, bottom: raw.b}
         else
             m["BoundingRect"] := ""
@@ -201,107 +232,131 @@ _ElementToMap(el) {
     try m["HWND"] := "0"
     catch
         m["HWND"] := "0"
-    return m
+    return(m)
 }
 
-_PropStr(el, propId) {
-    try {
-        return String(el.GetPropertyValue(propId))
-    } catch {
-        return ""
+_PropStr(el, propId)
+{
+    try
+    {
+        return(String(el.GetPropertyValue(propId)))
     }
-}
-
-_PropBool(el, propId) {
-    try {
-        return el.GetPropertyValue(propId) ? true : false
-    } catch {
-        return false
+    catch
+    {
+        return("")
     }
 }
 
-_DetermineAction(el) {
-    try {
-        if el.GetPropertyValue(30031)
-            return "Invoke()"
+_PropBool(el, propId)
+{
+    try
+    {
+        return(el.GetPropertyValue(propId) ? true : false)
     }
-    try {
-        if el.GetPropertyValue(30041)
-            return "Toggle()"
+    catch
+    {
+        return(false)
     }
-    try {
-        if el.GetPropertyValue(30028) {
+}
+
+_DetermineAction(el)
+{
+    try
+    {
+        if (el.GetPropertyValue(30031))
+            return("Invoke()")
+    }
+    try
+    {
+        if (el.GetPropertyValue(30041))
+            return("Toggle()")
+    }
+    try
+    {
+        if (el.GetPropertyValue(30028)) {
             state := el.GetPattern("ExpandCollapse").ExpandCollapseState
-            return state = 0 ? "Expand()" : "Collapse()"
+            return(state = 0 ? "Expand()" : "Collapse()")
         }
     }
-    try {
-        if el.GetPropertyValue(30043)
-            return 'SetValue("")'
+    try
+    {
+        if (el.GetPropertyValue(30043))
+            return('SetValue("")')
     }
-    try {
-        if el.GetPropertyValue(30036)
-            return "Select()"
+    try
+    {
+        if (el.GetPropertyValue(30036))
+            return("Select()")
     }
-    return "Click()"
+    return("Click()")
 }
 
-_GetPatterns(el) {
+_GetPatterns(el)
+{
     patterns := []
-    try {
-        if el.GetPropertyValue(30031)
+    try
+    {
+        if (el.GetPropertyValue(30031))
             patterns.Push({name: "Invoke"})
     }
-    try {
-        if el.GetPropertyValue(30041) {
+    try
+    {
+        if (el.GetPropertyValue(30041)) {
             p := {name: "Toggle"}
             try p.state := el.GetPattern("Toggle").ToggleState
             patterns.Push(p)
         }
     }
-    try {
-        if el.GetPropertyValue(30028) {
+    try
+    {
+        if (el.GetPropertyValue(30028)) {
             p := {name: "ExpandCollapse"}
             try p.state := Map(0, "Collapsed", 1, "Expanded", 2, "PartiallyExpanded")[el.GetPattern("ExpandCollapse").ExpandCollapseState]
             patterns.Push(p)
         }
     }
-    try {
-        if el.GetPropertyValue(30043) {
+    try
+    {
+        if (el.GetPropertyValue(30043)) {
             p := {name: "Value"}
             try p.value := el.GetPattern("Value").Value
             try p.isReadOnly := el.GetPattern("Value").IsReadOnly
             patterns.Push(p)
         }
     }
-    try {
-        if el.GetPropertyValue(30036) {
+    try
+    {
+        if (el.GetPropertyValue(30036)) {
             p := {name: "SelectionItem"}
             try p.isSelected := el.GetPattern("SelectionItem").IsSelected
             patterns.Push(p)
         }
     }
-    try {
-        if el.GetPropertyValue(30037) {
+    try
+    {
+        if (el.GetPropertyValue(30037)) {
             p := {name: "Selection"}
             try p.canSelectMultiple := el.GetPattern("Selection").CanSelectMultiple
             patterns.Push(p)
         }
     }
-    try {
-        if el.GetPropertyValue(30034) {
+    try
+    {
+        if (el.GetPropertyValue(30034)) {
             p := {name: "Scroll"}
             try p.horizontallyScrollable := el.GetPattern("Scroll").HorizontallyScrollable
             try p.verticallyScrollable := el.GetPattern("Scroll").VerticallyScrollable
             patterns.Push(p)
         }
     }
-    return patterns
+    return(patterns)
 }
 
-_GetAncestorChain(el) {
+_GetAncestorChain(el)
+{
     chain := []
-    try {
+    try
+    {
         walker := UIA.TreeWalkerTrue
         cur := el
         while cur {
@@ -316,10 +371,11 @@ _GetAncestorChain(el) {
             cur := walker.GetParentElement(cur)
         }
     }
-    return chain
+    return(chain)
 }
 
-_ElementSummary(el) {
+_ElementSummary(el)
+{
     return {
         Type:          _PropStr(el, 30003),
         Name:          _PropStr(el, 30005),
@@ -330,20 +386,23 @@ _ElementSummary(el) {
     }
 }
 
-_IsBrowserProcess(pid) {
-    try {
+_IsBrowserProcess(pid)
+{
+    try
+    {
         exe := ProcessGetName(pid)
         exe := StrLower(exe)
-        return InStr(exe, "chrome") || InStr(exe, "msedge") || InStr(exe, "opera") || InStr(exe, "brave") || InStr(exe, "firefox")
+        return(InStr(exe, "chrome") || InStr(exe, "msedge") || InStr(exe, "opera") || InStr(exe, "brave") || InStr(exe, "firefox"))
     }
-    return false
+    return(false)
 }
 
 ; ══════════════════════════════════════════════════════════════
 ;  Tests
 ; ══════════════════════════════════════════════════════════════
 
-Test_EscapeStr() {
+Test_EscapeStr()
+{
     _Log("=== Test _EscapeStr ===`n")
     AssertEqual(_EscapeStr('hello'), 'hello', "plain string unchanged")
     AssertEqual(_EscapeStr('say "hi"'), 'say \"hi\"', "quotes escaped")
@@ -352,7 +411,8 @@ Test_EscapeStr() {
     AssertEqual(_EscapeStr('quote " and \ slash'), 'quote \" and \\ slash', "mixed escapes")
 }
 
-Test_Join() {
+Test_Join()
+{
     _Log("=== Test _Join ===`n")
     AssertEqual(_Join(["a"]), "a", "single element")
     AssertEqual(_Join(["a", "b"]), "a, b", "two elements")
@@ -360,7 +420,8 @@ Test_Join() {
     AssertEqual(_Join([]), "", "empty array")
 }
 
-Test_BuildCondition() {
+Test_BuildCondition()
+{
     _Log("=== Test _BuildCondition ===`n")
 
     ; Valid condition with Type
@@ -394,18 +455,20 @@ Test_BuildCondition() {
     Assert(cond != "", "integer property ID works")
 }
 
-Test_MakeCacheRequest() {
+Test_MakeCacheRequest()
+{
     _Log("=== Test _MakeCacheRequest ===`n")
     cr := _MakeCacheRequest()
     Assert(cr != "", "cache request created")
     ; We can't easily inspect the cache request internals, but the call shouldn't throw
 }
 
-Test_IsBrowserProcess() {
+Test_IsBrowserProcess()
+{
     _Log("=== Test _IsBrowserProcess ===`n")
     ; Test with Explorer PID (should NOT be browser)
     explorerPid := ProcessExist("explorer.exe")
-    if explorerPid
+    if (explorerPid)
         Assert(!_IsBrowserProcess(explorerPid), "explorer.exe is not a browser")
 
     ; Test with own script PID (should NOT be browser)
@@ -416,12 +479,14 @@ Test_IsBrowserProcess() {
     Assert(!_IsBrowserProcess(99999999), "nonexistent PID returns false")
 }
 
-Test_ElementSummary() {
+Test_ElementSummary()
+{
     _Log("=== Test _ElementSummary ===`n")
     ; Get a real element to test the summary function
-    try {
+    try
+    {
         el := UIA.GetFocusedElement()
-        if el {
+        if (el) {
             summary := _ElementSummary(el)
             AssertHas(summary, "Type", "summary has Type")
             AssertHas(summary, "Name", "summary has Name")
@@ -432,16 +497,20 @@ Test_ElementSummary() {
             ; Boolean should be actual boolean values
             Assert(summary.IsEnabled = true || summary.IsEnabled = false, "IsEnabled is boolean")
         }
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
-Test_ElementToMap() {
+Test_ElementToMap()
+{
     _Log("=== Test _ElementToMap ===`n")
-    try {
+    try
+    {
         el := UIA.GetFocusedElement()
-        if el {
+        if (el) {
             m := _ElementToMap(el)
             AssertType(m, "Map", "_ElementToMap returns Map")
             Assert(m.Has("Type"), "has Type")
@@ -451,16 +520,20 @@ Test_ElementToMap() {
             Assert(m.Has("IsEnabled"), "has IsEnabled")
             Assert(m.Has("FrameworkId"), "has FrameworkId")
         }
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
-Test_BuildConditionString() {
+Test_BuildConditionString()
+{
     _Log("=== Test _BuildConditionString ===`n")
-    try {
+    try
+    {
         el := UIA.GetFocusedElement()
-        if el {
+        if (el) {
             cs := _BuildConditionString(el)
             Assert(cs != "{}", "condition string is not empty")
             Assert(InStr(cs, "{") = 1, "starts with {")
@@ -468,48 +541,60 @@ Test_BuildConditionString() {
             ; Should contain Type
             Assert(InStr(cs, "Type:"), "contains Type:")
         }
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
-Test_GetPatterns() {
+Test_GetPatterns()
+{
     _Log("=== Test _GetPatterns ===`n")
-    try {
+    try
+    {
         el := UIA.GetFocusedElement()
-        if el {
+        if (el) {
             patterns := _GetPatterns(el)
             AssertType(patterns, "Array", "patterns returns Array")
             ; Each pattern should have a name
             for p in patterns
                 Assert(p.Has("name"), "pattern has name: " p.name)
         }
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
-Test_GetAncestorChain() {
+Test_GetAncestorChain()
+{
     _Log("=== Test _GetAncestorChain ===`n")
-    try {
+    try
+    {
         el := UIA.GetFocusedElement()
-        if el {
+        if (el) {
             chain := _GetAncestorChain(el)
             AssertType(chain, "Array", "ancestor chain is Array")
             Assert(chain.Length > 0, "chain has at least 1 element (self)")
             ; First element in chain should be the root
             _Log("    Chain depth: " chain.Length "`n")
         }
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
-Test_DetermineAction() {
+Test_DetermineAction()
+{
     _Log("=== Test _DetermineAction ===`n")
-    try {
+    try
+    {
         el := UIA.GetFocusedElement()
-        if el {
+        if (el) {
             action := _DetermineAction(el)
             Assert(action != "", "action string is not empty")
             ; Should end with ()
@@ -517,19 +602,25 @@ Test_DetermineAction() {
             Assert(InStr(action, "("), "action contains (")
             _Log("    Inferred action: " action "`n")
         }
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
 }
 
-Test_JSON_Serialize() {
+Test_JSON_Serialize()
+{
     _Log("=== Test JSON Serialize/Parse ===`n")
 
     ; Verify JSON library is available (cJSON loads a native DLL at runtime;
     ; if that fails, Stringify/Parse won't work and we skip these tests).
-    try {
+    try
+    {
         testJson := JSON.Stringify({test: 1}, 0)
-    } catch as err {
+    }
+    catch as err
+    {
         _Log("  SKIP: JSON library unavailable — " err.Message "`n")
         _Log("  (cJSON DLL may have failed to load. Check AHK bitness matches the DLL.)`n")
         return
@@ -569,7 +660,8 @@ Test_JSON_Serialize() {
     AssertEqual(parsedErr["error"]["message"], "Not found", "RPC error message")
 }
 
-Test_BuildCondition_EdgeCases() {
+Test_BuildCondition_EdgeCases()
+{
     _Log("=== Test _BuildCondition edge cases ===`n")
 
     ; Single property
@@ -626,7 +718,7 @@ _Log("  Passed: " _pass "`n")
 _Log("  Failed: " _fail "`n")
 _Log("  Log file: " _logFile "`n")
 
-if _fail > 0 {
+if (_fail > 0) {
     _Log("`nSOME TESTS FAILED!`n")
     ExitApp(1)
 }

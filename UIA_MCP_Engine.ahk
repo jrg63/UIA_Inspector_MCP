@@ -32,16 +32,17 @@ global LOG_FILE         := A_Temp "\UIA_MCP_Engine.log"
 global PORT_FILE         := A_Temp "\UIA_MCP_Engine.port"
 
 ; Parse command-line args
-for i, arg in A_Args {
-    if arg = "--port" && A_Args.Has(i + 1)
+for i, arg in A_Args
+{
+    if (arg = "--port" && A_Args.Has(i + 1))
         ENGINE_PORT := Integer(A_Args[i + 1])
-    if arg = "--idle-timeout" && A_Args.Has(i + 1)
+    if (arg = "--idle-timeout" && A_Args.Has(i + 1))
         IDLE_TIMEOUT_MS := Integer(A_Args[i + 1]) * 1000
-    if arg = "--inspect-hotkey" && A_Args.Has(i + 1)
+    if (arg = "--inspect-hotkey" && A_Args.Has(i + 1))
         INSPECT_HOTKEY := A_Args[i + 1]
-    if arg = "--log-file" && A_Args.Has(i + 1)
+    if (arg = "--log-file" && A_Args.Has(i + 1))
         LOG_FILE := A_Args[i + 1]
-    if arg = "--log-level" && A_Args.Has(i + 1) {
+    if (arg = "--log-level" && A_Args.Has(i + 1)) {
         switch A_Args[i + 1], 0 {
             case "none":  LOG_LEVEL := 0
             case "error": LOG_LEVEL := 1
@@ -55,8 +56,9 @@ for i, arg in A_Args {
 ;  Logging — writes to disk file AND stderr
 ; ══════════════════════════════════════════════════════════════════
 
-_Log(level, msg) {
-    if level > LOG_LEVEL
+_Log(level, msg)
+{
+    if (level > LOG_LEVEL)
         return
     static labels := ["NONE", "ERROR", "INFO ", "DEBUG"]
     label := labels[level + 1]
@@ -75,7 +77,8 @@ _Log(level, msg) {
  * @param id - the request id (mirrored)
  * @param result - the result value (any AHK value / object)
  */
-_RpcResult(id, result) {
+_RpcResult(id, result)
+{
     return JSON.Stringify({
         jsonrpc: "2.0",
         result: result,
@@ -90,9 +93,10 @@ _RpcResult(id, result) {
  * @param message - human-readable error string
  * @param data - optional extra error detail
  */
-_RpcError(id, code, message, data := "") {
+_RpcError(id, code, message, data := "")
+{
     err := {code: code, message: message}
-    if data
+    if (data)
         err.data := data
     return JSON.Stringify({
         jsonrpc: "2.0",
@@ -109,7 +113,8 @@ _RpcError(id, code, message, data := "") {
  * Build a cache request for bulk property retrieval during tree walks.
  * Pre-loads ~22 element properties + ~13 Is*PatternAvailable flags.
  */
-_MakeCacheRequest() {
+_MakeCacheRequest()
+{
     global UIA, UIA_TreeScope
     cr := UIA.CreateCacheRequest()
     cr.TreeScope := UIA_TreeScope.Subtree
@@ -121,14 +126,15 @@ _MakeCacheRequest() {
     for propId in [30027, 30028, 30031, 30033, 30034, 30036, 30037,
                    30040, 30041, 30042, 30043, 30044, 30090]
         cr.AddProperty(propId)
-    return cr
+    return(cr)
 }
 
 /**
  * Convert a UIA element to a Map of all its known properties.
  * Mirrors the property list used in UIA_Inspector's PopulateProperties.
  */
-_ElementToMap(el) {
+_ElementToMap(el)
+{
     global UIA
     m := Map()
     m["Type"]           := _PropStr(el, 30003)
@@ -153,9 +159,10 @@ _ElementToMap(el) {
     m["NativeWindowHandle"] := _PropHwnd(el, 30020)
 
     ; BoundingRectangle
-    try {
+    try
+    {
         raw := el.GetPropertyValue(30001)
-        if IsObject(raw)
+        if (IsObject(raw))
             m["BoundingRect"] := {left: raw.l, top: raw.t, right: raw.r, bottom: raw.b}
         else
             m["BoundingRect"] := ""
@@ -167,95 +174,121 @@ _ElementToMap(el) {
     catch
         m["HWND"] := "0"
 
-    return m
+    return(m)
 }
 
-_PropStr(el, propId) {
-    try {
+_PropStr(el, propId)
+{
+    try
+    {
         return String(el.GetPropertyValue(propId))
-    } catch {
-        return ""
+    }
+    catch
+    {
+        return("")
     }
 }
 
-_PropBool(el, propId) {
-    try {
-        return el.GetPropertyValue(propId) ? true : false
-    } catch {
-        return false
+_PropBool(el, propId)
+{
+    try
+    {
+        return(el.GetPropertyValue(propId) ? true : false)
+    }
+    catch
+    {
+        return(false)
     }
 }
 
-_PropInt(el, propId) {
-    try {
+_PropInt(el, propId)
+{
+    try
+    {
         return Integer(el.GetPropertyValue(propId))
-    } catch {
-        return 0
+    }
+    catch
+    {
+        return(0)
     }
 }
 
-_PropHwnd(el, propId) {
-    try {
+_PropHwnd(el, propId)
+{
+    try
+    {
         raw := el.GetPropertyValue(propId)
-        return raw ? Format("0x{:X}", raw) : "0"
-    } catch {
-        return "0"
+        return(raw ? Format("0x{:X}", raw) : "0")
+    }
+    catch
+    {
+        return("0")
     }
 }
 
 /**
  * Resolve a concrete HWND for `el` — NativeWindowHandle → WinId + DeepChild search.
  */
-_ResolveElementHwnd(el) {
-    try {
+_ResolveElementHwnd(el)
+{
+    try
+    {
         nwh := el.GetPropertyValue(30020)
-        if nwh
+        if (nwh)
             return Format("0x{:X}", nwh)
     }
-    try {
+    try
+    {
         winId := WinExist("ahk_id " el.ProcessId)
-        if winId {
+        if (winId) {
             deep := _FindDeepestHWND(winId, el)
-            if deep
+            if (deep)
                 return Format("0x{:X}", deep)
             return Format("0x{:X}", winId)
         }
     }
-    return "0"
+    return("0")
 }
 
-_FindDeepestHWND(hwnd, el) {
-    try {
+_FindDeepestHWND(hwnd, el)
+{
+    try
+    {
         rect := el.GetPropertyValue(30001)
-        if !IsObject(rect)
-            return 0
+        if (!IsObject(rect))
+            return(0)
         targetLeft := rect.l, targetTop := rect.t, targetRight := rect.r, targetBottom := rect.b
-    } catch {
-        return 0
+    }
+    catch
+    {
+        return(0)
     }
     bestMatch := 0
     bestArea := 0
     EnumChildWindows(hwnd, _EnumChildFunc.Bind(&bestMatch, &bestArea, targetLeft, targetTop, targetRight, targetBottom))
-    return bestMatch
+    return(bestMatch)
 }
 
-_EnumChildFunc(&bestMatch, &bestArea, tL, tT, tR, tB, hwnd) {
-    try {
+_EnumChildFunc(&bestMatch, &bestArea, tL, tT, tR, tB, hwnd)
+{
+    try
+    {
         WinGetPos(&x, &y, &w, &h, hwnd)
         left := Max(x, tL), top := Max(y, tT)
         right := Min(x + w, tR), bottom := Min(y + h, tB)
-        if left < right && top < bottom {
+        if (left < right && top < bottom) {
             area := (right - left) * (bottom - top)
-            if area > bestArea {
+            if (area > bestArea) {
                 bestArea := area
                 bestMatch := hwnd
             }
         }
     }
-    return true
+    return(true)
 }
 
-EnumChildWindows(hwnd, fn) {
+EnumChildWindows(hwnd, fn)
+{
     DllCall("EnumChildWindows", "Ptr", hwnd, "Ptr", CallbackCreate(fn, "Fast"), "Ptr", 0)
 }
 
@@ -265,7 +298,8 @@ EnumChildWindows(hwnd, fn) {
  *          or numeric property IDs: {30003:"Button"}
  * Returns a Map suitable for FindFirst/FindAll.
  */
-_BuildCondition(condObj) {
+_BuildCondition(condObj)
+{
     condMap := Map()
     nameToId := Map(
         "Type", 30003,
@@ -278,45 +312,52 @@ _BuildCondition(condObj) {
         "AccessKey", 30007,
         "HelpText", 30013
     )
-    for key, val in condObj {
-        if val = ""
+    for key, val in condObj
+    {
+        if (val = "")
             continue
         propId := 0
-        if nameToId.Has(key)
+        if (nameToId.Has(key))
             propId := nameToId[key]
         else {
             try propId := Integer(key)
             catch
                 propId := 0
         }
-        if propId {
+        if (propId) {
             ; For Type property, convert name to integer ID (e.g. "Pane" → 50033)
-            if propId = 30003 && val is String {
-                try {
+            if (propId = 30003 && val is String) {
+                try
+                {
                     typeId := UIA_Type.%val%
                     condMap[propId] := typeId
-                } catch {
+                }
+                catch
+                {
                     condMap[propId] := String(val)
                 }
-            } else {
+            }
+            else
+            {
                 condMap[propId] := String(val)
             }
         }
     }
     ; Convert Map to Object — UIA.CreateCondition requires Object, not Map
-    if !condMap.Count
-        return ""
+    if (!condMap.Count)
+        return("")
     condObj2 := {}
     for k, v in condMap
         condObj2.%k% := v
-    return condObj2
+    return(condObj2)
 }
 
 /**
  * Convert an element to a summary map (Type + Name + AutomationId + ClassName + BoundingRect).
  * Used for find_all_elements and children lists to keep responses compact.
  */
-_ElementSummary(el) {
+_ElementSummary(el)
+{
     return {
         Type:          _PropStr(el, 30003),
         Name:          _PropStr(el, 30005),
@@ -330,7 +371,8 @@ _ElementSummary(el) {
 /**
  * Resolve a TreeScope from a string name. Falls back to Descendants.
  */
-_ResolveScope(scopeName) {
+_ResolveScope(scopeName)
+{
     switch scopeName {
         case "Children":      return UIA_TreeScope.Children
         case "Subtree":       return UIA_TreeScope.Subtree
@@ -343,7 +385,8 @@ _ResolveScope(scopeName) {
 /**
  * Resolve a MatchMode from a string.
  */
-_ResolveMatchMode(mode) {
+_ResolveMatchMode(mode)
+{
     switch mode {
         case "Contains":   return 2
         case "StartsWith": return 1
@@ -356,13 +399,16 @@ _ResolveMatchMode(mode) {
  * Walk ancestor chain from `el` → root via TreeWalkerTrue.
  * Returns array of element summary objects, root-first.
  */
-_GetAncestorChain(el) {
+_GetAncestorChain(el)
+{
     global UIA
     chain := []
-    try {
+    try
+    {
         walker := UIA.TreeWalkerTrue
         cur := el
-        while cur {
+        while (cur)
+        {
             chain.InsertAt(1, {
                 Type:          _PropStr(cur, 30003),
                 Name:          _PropStr(cur, 30005),
@@ -374,21 +420,23 @@ _GetAncestorChain(el) {
             cur := walker.GetParentElement(cur)
         }
     }
-    return chain
+    return(chain)
 }
 
 /**
  * Build a compact text tree from a window element.
  * Marks the selected element with `<<< SELECTED` if matched.
  */
-_BuildTreeSnippet(windowEl, selectedEl := "", maxDepth := 4) {
+_BuildTreeSnippet(windowEl, selectedEl := "", maxDepth := 4)
+{
     out := ""
     _WalkTree(windowEl, selectedEl, 0, maxDepth, &out)
-    return out
+    return(out)
 }
 
-_WalkTree(el, selectedEl, depth, maxDepth, &out) {
-    if depth > maxDepth
+_WalkTree(el, selectedEl, depth, maxDepth, &out)
+{
+    if (depth > maxDepth)
         return
     prefix := ""
     loop depth
@@ -398,24 +446,27 @@ _WalkTree(el, selectedEl, depth, maxDepth, &out) {
     aid := _PropStr(el, 30011)
     cls := _PropStr(el, 30012)
     marker := ""
-    try {
-        if selectedEl && el.Compare(selectedEl)
+    try
+    {
+        if (selectedEl && el.Compare(selectedEl))
             marker := " <<< SELECTED"
     }
     line := prefix "[" typ "]"
-    if name
+    if (name)
         line .= " Name='" name "'"
-    if aid
+    if (aid)
         line .= " AutomationId='" aid "'"
-    if cls
+    if (cls)
         line .= " ClassName='" cls "'"
     line .= marker "`n"
     out .= line
 
     ; Walk children
-    try {
+    try
+    {
         child := UIA.TreeWalkerTrue.GetFirstChildElement(el)
-        while child {
+        while (child)
+        {
             _WalkTree(child, selectedEl, depth + 1, maxDepth, &out)
             child := UIA.TreeWalkerTrue.GetNextSiblingElement(child)
         }
@@ -426,33 +477,38 @@ _WalkTree(el, selectedEl, depth, maxDepth, &out) {
  * Return the available patterns for an element as an array of objects,
  * each with optional sub-properties (e.g. ToggleState, Value).
  */
-_GetPatterns(el) {
+_GetPatterns(el)
+{
     global UIA
     patterns := []
     ; Invoke
-    try {
-        if el.GetPropertyValue(30031)
+    try
+    {
+        if (el.GetPropertyValue(30031))
             patterns.Push({name: "Invoke"})
     }
     ; Toggle
-    try {
-        if el.GetPropertyValue(30041) {
+    try
+    {
+        if (el.GetPropertyValue(30041)) {
             p := {name: "Toggle"}
             try p.state := el.GetPattern("Toggle").ToggleState
             patterns.Push(p)
         }
     }
     ; ExpandCollapse
-    try {
-        if el.GetPropertyValue(30028) {
+    try
+    {
+        if (el.GetPropertyValue(30028)) {
             p := {name: "ExpandCollapse"}
             try p.state := Map(0, "Collapsed", 1, "Expanded", 2, "PartiallyExpanded")[el.GetPattern("ExpandCollapse").ExpandCollapseState]
             patterns.Push(p)
         }
     }
     ; Value
-    try {
-        if el.GetPropertyValue(30043) {
+    try
+    {
+        if (el.GetPropertyValue(30043)) {
             p := {name: "Value"}
             try p.value := el.GetPattern("Value").Value
             try p.isReadOnly := el.GetPattern("Value").IsReadOnly
@@ -460,24 +516,27 @@ _GetPatterns(el) {
         }
     }
     ; SelectionItem
-    try {
-        if el.GetPropertyValue(30036) {
+    try
+    {
+        if (el.GetPropertyValue(30036)) {
             p := {name: "SelectionItem"}
             try p.isSelected := el.GetPattern("SelectionItem").IsSelected
             patterns.Push(p)
         }
     }
     ; Selection
-    try {
-        if el.GetPropertyValue(30037) {
+    try
+    {
+        if (el.GetPropertyValue(30037)) {
             p := {name: "Selection"}
             try p.canSelectMultiple := el.GetPattern("Selection").CanSelectMultiple
             patterns.Push(p)
         }
     }
     ; Scroll
-    try {
-        if el.GetPropertyValue(30034) {
+    try
+    {
+        if (el.GetPropertyValue(30034)) {
             p := {name: "Scroll"}
             try p.horizontallyScrollable := el.GetPattern("Scroll").HorizontallyScrollable
             try p.verticallyScrollable := el.GetPattern("Scroll").VerticallyScrollable
@@ -485,8 +544,9 @@ _GetPatterns(el) {
         }
     }
     ; Window
-    try {
-        if el.GetPropertyValue(30090) {
+    try
+    {
+        if (el.GetPropertyValue(30090)) {
             p := {name: "WindowPattern"}
             try p.canMinimize := el.GetPattern("WindowPattern").CanMinimize
             try p.canMaximize := el.GetPattern("WindowPattern").CanMaximize
@@ -494,8 +554,9 @@ _GetPatterns(el) {
         }
     }
     ; Transform
-    try {
-        if el.GetPropertyValue(30040) {
+    try
+    {
+        if (el.GetPropertyValue(30040)) {
             p := {name: "Transform"}
             try p.canMove := el.GetPattern("Transform").CanMove
             try p.canResize := el.GetPattern("Transform").CanResize
@@ -503,136 +564,156 @@ _GetPatterns(el) {
         }
     }
     ; LegacyIAccessible
-    try {
-        if el.GetPropertyValue(30033) {
+    try
+    {
+        if (el.GetPropertyValue(30033)) {
             p := {name: "LegacyIAccessible"}
             try p.name := el.GetPattern("LegacyIAccessible").Name
             try p.value := el.GetPattern("LegacyIAccessible").Value
             patterns.Push(p)
         }
     }
-    return patterns
+    return(patterns)
 }
 
 /**
  * Determine a sensible default action for an element by probing pattern availability.
  */
-_DetermineAction(el) {
-    try {
-        if el.GetPropertyValue(30031)
-            return "Invoke()"
+_DetermineAction(el)
+{
+    try
+    {
+        if (el.GetPropertyValue(30031))
+            return("Invoke()")
     }
-    try {
-        if el.GetPropertyValue(30041)
-            return "Toggle()"
+    try
+    {
+        if (el.GetPropertyValue(30041))
+            return("Toggle()")
     }
-    try {
-        if el.GetPropertyValue(30028) {
+    try
+    {
+        if (el.GetPropertyValue(30028)) {
             state := el.GetPattern("ExpandCollapse").ExpandCollapseState
-            return state = 0 ? "Expand()" : "Collapse()"
+            return(state = 0 ? "Expand()" : "Collapse()")
         }
     }
-    try {
-        if el.GetPropertyValue(30043)
-            return 'SetValue("")'
+    try
+    {
+        if (el.GetPropertyValue(30043))
+            return('SetValue("")')
     }
-    try {
-        if el.GetPropertyValue(30036)
-            return "Select()"
+    try
+    {
+        if (el.GetPropertyValue(30036))
+            return("Select()")
     }
-    return "Click()"
+    return("Click()")
 }
 
 /**
  * Build a condition string for `el` — Type + AutomationId > Name > ClassName.
  */
-_BuildConditionString(el) {
+_BuildConditionString(el)
+{
     parts := []
-    try {
+    try
+    {
         typeId := el.Type
         typeName := UIA_Type.HasValue(typeId)
-        if typeName
+        if (typeName)
             parts.Push('Type: "' typeName '"')
     }
-    try {
+    try
+    {
         aid := el.AutomationId
-        if aid != "" {
+        if (aid != "") {
             parts.Push('AutomationId: "' _EscapeStr(String(aid)) '"')
-            return "{" _Join(parts) "}"
+            return("{" _Join(parts) "}")
         }
     }
-    try {
+    try
+    {
         name := el.Name
-        if name {
+        if (name) {
             parts.Push('Name: "' _EscapeStr(name) '"')
-            return "{" _Join(parts) "}"
+            return("{" _Join(parts) "}")
         }
     }
-    try {
+    try
+    {
         cn := el.ClassName
-        if cn
+        if (cn)
             parts.Push('ClassName: "' _EscapeStr(cn) '"')
     }
-    return parts.Length ? "{" _Join(parts) "}" : "{}"
+    return(parts.Length ? "{" _Join(parts) "}" : "{}")
 }
 
-_EscapeStr(s) {
+_EscapeStr(s)
+{
     s := StrReplace(s, "\", "\\")
     s := StrReplace(s, '"', '\"')
-    return s
+    return(s)
 }
 
-_Join(arr) {
+_Join(arr)
+{
     s := ""
     for i, v in arr
         s .= (i > 1 ? ", " : "") v
-    return s
+    return(s)
 }
 
 ; ══════════════════════════════════════════════════════════════════
 ;  Process Detection Helpers
 ; ══════════════════════════════════════════════════════════════════
 
-_IsBrowserProcess(pid) {
-    try {
+_IsBrowserProcess(pid)
+{
+    try
+    {
         exe := ProcessGetName(pid)
         exe := StrLower(exe)
-        return InStr(exe, "chrome") || InStr(exe, "msedge") || InStr(exe, "opera") || InStr(exe, "brave") || InStr(exe, "firefox")
+        return(InStr(exe, "chrome") || InStr(exe, "msedge") || InStr(exe, "opera") || InStr(exe, "brave") || InStr(exe, "firefox"))
     }
-    return false
+    return(false)
 }
 
-_IsElevated(pid) {
-    try {
+_IsElevated(pid)
+{
+    try
+    {
         hProc := DllCall("OpenProcess", "UInt", 0x400, "Int", 0, "UInt", pid, "Ptr")
-        if !hProc
-            return false
+        if (!hProc)
+            return(false)
         token := 0
         DllCall("OpenProcessToken", "Ptr", hProc, "UInt", 8, "Ptr*", &token)
         DllCall("CloseHandle", "Ptr", hProc)
-        if !token
-            return false
+        if (!token)
+            return(false)
         elevation := 0
         DllCall("GetTokenInformation", "Ptr", token, "Int", 20, "UInt*", &elevation, "UInt", 4, "UInt*", &retLen)
         DllCall("CloseHandle", "Ptr", token)
-        return elevation != 0
+        return(elevation != 0)
     }
-    return false
+    return(false)
 }
 
-_CheckExeBitness(path) {
-    try {
-        if !FileExist(path)
-            return "?"
+_CheckExeBitness(path)
+{
+    try
+    {
+        if (!FileExist(path))
+            return("?")
         bin := FileOpen(path, "r")
         bin.Pos := 0x3C
         peOffset := bin.ReadUInt()
         bin.Pos := peOffset + 4
         machine := bin.ReadUShort()
         bin.Close()
-        return machine = 0x8664 ? "x64" : "x86"
+        return(machine = 0x8664 ? "x64" : "x86")
     }
-    return "?"
+    return("?")
 }
 
 ; ══════════════════════════════════════════════════════════════════
@@ -645,15 +726,19 @@ _CheckExeBitness(path) {
  * Falls back chain: anchor hwnd → condition → scope → matchMode → index
  * Returns the resolved element, or throws.
  */
-_ResolveLocator(locator) {
+_ResolveLocator(locator)
+{
     root := 0
     ; Root by HWND
-    if locator.Has("hwnd") && locator["hwnd"] {
+    if (locator.Has("hwnd") && locator["hwnd"]) {
         ; Try without cache request first — VB6/LegacyIAccessible
         ; bridges can E_INVALIDARG when cache is combined with FindAll.
-        try {
+        try
+        {
             root := UIA.ElementFromHandle(locator["hwnd"])
-        } catch {
+        }
+        catch
+        {
             cr := _MakeCacheRequest()
             root := UIA.ElementFromHandle(locator["hwnd"], cr)
         }
@@ -662,16 +747,16 @@ _ResolveLocator(locator) {
     else {
         root := UIA.GetFocusedElement()
     }
-    if !root
+    if (!root)
         throw Error("Could not resolve root element from locator")
 
     ; If no condition, return root
-    if !locator.Has("condition") || !locator["condition"] || locator["condition"] = ""
-        return root
+    if (!locator.Has("condition") || !locator["condition"] || locator["condition"] = "")
+        return(root)
 
     condMap := _BuildCondition(locator["condition"])
-    if condMap = ""
-        return root
+    if (condMap = "")
+        return(root)
 
     scope := _ResolveScope(locator.Has("scope") ? locator["scope"] : "Descendants")
     matchMode := _ResolveMatchMode(locator.Has("matchMode") ? locator["matchMode"] : "Exact")
@@ -680,13 +765,16 @@ _ResolveLocator(locator) {
     ; Use FindAll + index to get the Nth match.
     ; Wrapped in its own try so COM errors don't propagate
     ; and corrupt the engine's COM apartment.
-    try {
+    try
+    {
         matches := root.FindAll(condMap, matchMode, scope)
-        if IsObject(matches) && matches.Length >= index
-            return matches[index]
-    } catch as findErr {
+        if (IsObject(matches) && matches.Length >= index)
+            return(matches[index])
+    }
+    catch as findErr
+    {
         ; Distinguish COM parameter errors from "not found"
-        if InStr(findErr.Message, "0x80070057") || InStr(findErr.Message, "parameter is incorrect")
+        if (InStr(findErr.Message, "0x80070057") || InStr(findErr.Message, "parameter is incorrect"))
             throw Error("FindAll failed on this window: " findErr.Message
                 . " — the condition may use properties unsupported by this window's UIA bridge.")
         ; Re-throw other errors
@@ -703,11 +791,12 @@ _ResolveLocator(locator) {
  * inspect_at_cursor
  * Returns full element info at the mouse cursor position.
  */
-_HandleInspectAtCursor(params) {
+_HandleInspectAtCursor(params)
+{
     global UIA
     CoordMode("Mouse", "Screen")
     MouseGetPos(&mX, &mY, &winUnderMouse)
-    if !winUnderMouse
+    if (!winUnderMouse)
         throw Error("No window under cursor")
     _Log(3, "InspectAtCursor: mouse at (" mX "," mY ") hwnd=0x" Format("{:X}", winUnderMouse))
 
@@ -715,7 +804,7 @@ _HandleInspectAtCursor(params) {
     targetPid := WinGetPID("ahk_id " winUnderMouse)
     _Log(3, "InspectAtCursor: targetPid=" targetPid)
     elevated := _IsElevated(targetPid)
-    if elevated && !A_IsAdmin {
+    if (elevated && !A_IsAdmin) {
         return {
             elevated: true,
             targetPid: targetPid,
@@ -725,8 +814,9 @@ _HandleInspectAtCursor(params) {
     }
 
     ; Activate Chromium accessibility if needed
-    try {
-        if _IsBrowserProcess(targetPid)
+    try
+    {
+        if (_IsBrowserProcess(targetPid))
             UIA.ActivateChromiumAccessibility(winUnderMouse)
     }
 
@@ -737,9 +827,12 @@ _HandleInspectAtCursor(params) {
 
     _Log(3, "InspectAtCursor: calling ElementFromPoint...")
     el := 0
-    try {
+    try
+    {
         el := UIA.ElementFromPoint(mX, mY)
-    } catch as err {
+    }
+    catch as err
+    {
         ; Chromium browsers, GPU-rendered surfaces, and some
         ; overlays don't expose UIA at the pixel level.
         return {
@@ -756,19 +849,20 @@ _HandleInspectAtCursor(params) {
     }
 
     ; Fallback: raw COM IUIAutomation call for custom UI frameworks
-    if !el {
-        try {
+    if (!el) {
+        try
+        {
             automation := UIA.IUIAutomation
             pt := Buffer(8, 0)
             NumPut("Int", mX, "Int", mY, pt)
             elPtr := 0
             ComCall(7, automation, "int", "ptr", pt, "ptr*", &elPtr)
-            if elPtr
+            if (elPtr)
                 el := UIA.IUIAutomationElement(elPtr)
         }
     }
 
-    if !el
+    if (!el)
         return {
             error: true,
             message: "UIA.ElementFromPoint returned nothing at (" mX "," mY ")",
@@ -780,17 +874,19 @@ _HandleInspectAtCursor(params) {
     _Log(3, "InspectAtCursor: element found, building full result...")
     result := _BuildFullElementResult(el, windowEl, winUnderMouse, targetPid)
     _Log(3, "InspectAtCursor: done, Type=" (result.HasProp("Type") ? result["Type"] : "?"))
-    return result
+    return(result)
 }
 
 /**
  * get_focused_element
  * Returns the currently focused UI element.
  */
-_HandleGetFocusedElement(params) {
-    try {
+_HandleGetFocusedElement(params)
+{
+    try
+    {
         el := UIA.GetFocusedElement()
-        if !el
+        if (!el)
             throw Error("No focused element found")
 
         ; Get window info from the focused element
@@ -804,7 +900,9 @@ _HandleGetFocusedElement(params) {
         try targetPid := WinGetPID("ahk_id " hwnd)
 
         return _BuildFullElementResult(el, windowEl, hwnd, targetPid)
-    } catch as err {
+    }
+    catch as err
+    {
         throw Error("Failed to get focused element: " err.Message)
     }
 }
@@ -812,11 +910,12 @@ _HandleGetFocusedElement(params) {
 /**
  * find_element — resolve a locator to a single element and return full info.
  */
-_HandleFindElement(params) {
+_HandleFindElement(params)
+{
     el := _ResolveLocator(params)
     hwnd := 0
     try hwnd := el.CurrentNativeWindowHandle
-    if !hwnd
+    if (!hwnd)
         try hwnd := el.GetPropertyValue(30020)
     targetPid := 0
     try targetPid := WinGetPID("ahk_id " hwnd)
@@ -830,40 +929,48 @@ _HandleFindElement(params) {
 /**
  * find_all_elements — return array of element summaries matching condition.
  */
-_HandleFindAllElements(params) {
+_HandleFindAllElements(params)
+{
     condMap := _BuildCondition(params.Has("condition") ? params["condition"] : {})
-    if condMap = ""
+    if (condMap = "")
         throw Error("condition is required for find_all")
 
     scope := _ResolveScope(params.Has("scope") ? params["scope"] : "Descendants")
     matchMode := _ResolveMatchMode(params.Has("matchMode") ? params["matchMode"] : "Exact")
 
     root := 0
-    if params.Has("hwnd") && params["hwnd"] {
+    if (params.Has("hwnd") && params["hwnd"]) {
         ; Try without cache request first — VB6/LegacyIAccessible windows
         ; can throw E_INVALIDARG (0x80070057) when a cache request is used
         ; with FindAll.  Using a bare ElementFromHandle avoids this.
-        try {
+        try
+        {
             root := UIA.ElementFromHandle(params["hwnd"])
-        } catch {
+        }
+        catch
+        {
             cr := _MakeCacheRequest()
             root := UIA.ElementFromHandle(params["hwnd"], cr)
         }
-    } else {
+    }
+    else
+    {
         root := UIA.GetFocusedElement()
     }
-    if !root
+    if (!root)
         throw Error("Could not resolve root")
 
     ; Protect FindAll — VB6/LegacyIAccessible bridges may throw
     ; E_INVALIDARG for conditions containing properties they don't
     ; support (e.g. AutomationId on a native menu item).  Catch it
     ; and return a clear error without crashing the engine.
-    try {
+    try
+    {
         matches := root.FindAll(condMap, matchMode, scope)
         results := []
-        if IsObject(matches) {
-            for i, m in matches {
+        if (IsObject(matches)) {
+            for i, m in matches
+            {
                 results.Push(_ElementSummary(m))
             }
         }
@@ -871,7 +978,9 @@ _HandleFindAllElements(params) {
             count: results.Length,
             elements: results
         }
-    } catch as err {
+    }
+    catch as err
+    {
         ; E_INVALIDARG / other COM errors: the condition isn't
         ; compatible with this element type.  Return a descriptive
         ; error instead of letting the engine crash.
@@ -889,17 +998,18 @@ _HandleFindAllElements(params) {
 /**
  * get_element_tree — walk the UIA tree from a window or element.
  */
-_HandleGetElementTree(params) {
+_HandleGetElementTree(params)
+{
     hwnd := params.Has("hwnd") ? params["hwnd"] : 0
     maxDepth := params.Has("maxDepth") ? params["maxDepth"] : 4
     filter := params.Has("filter") ? params["filter"] : ""
 
-    if !hwnd
+    if (!hwnd)
         throw Error("hwnd is required for get_element_tree")
 
     ; Check elevation
     targetPid := WinGetPID("ahk_id " hwnd)
-    if _IsElevated(targetPid) && !A_IsAdmin {
+    if (_IsElevated(targetPid) && !A_IsAdmin) {
         return {
             elevated: true,
             targetPid: targetPid,
@@ -920,7 +1030,8 @@ _HandleGetElementTree(params) {
 /**
  * get_ancestor_chain — walk from element to root.
  */
-_HandleGetAncestorChain(params) {
+_HandleGetAncestorChain(params)
+{
     el := _ResolveLocator(params)
     chain := _GetAncestorChain(el)
     return {
@@ -932,22 +1043,24 @@ _HandleGetAncestorChain(params) {
 /**
  * get_element_properties — return all properties for a resolved element.
  */
-_HandleGetElementProperties(params) {
+_HandleGetElementProperties(params)
+{
     el := _ResolveLocator(params)
     props := _ElementToMap(el)
     ; Convert Map to object for JSON serialization
     result := {}
     for k, v in props
         result.%k% := v
-    return result
+    return(result)
 }
 
 /**
  * get_element_patterns — return available patterns.
  */
-_HandleGetElementPatterns(params) {
+_HandleGetElementPatterns(params)
+{
     el := _ResolveLocator(params)
-    return _GetPatterns(el)
+    return(_GetPatterns(el))
 }
 
 /**
@@ -958,8 +1071,10 @@ _HandleGetElementPatterns(params) {
  * MDI forms (ThunderRT6MDIForm) and any window with GWLP_HWNDPARENT set.
  * EnumWindows sees every top-level window unconditionally.
  */
-_EnumWindowsCollect(hwnd, lParam) {
-    try {
+_EnumWindowsCollect(hwnd, lParam)
+{
+    try
+    {
         title := WinGetTitle(hwnd)
         class := WinGetClass(hwnd)
         pid  := WinGetPID(hwnd)
@@ -977,7 +1092,9 @@ _EnumWindowsCollect(hwnd, lParam) {
             elevated: _IsElevated(pid),
             visible: WinGetMinMax(hwnd) != -1
         })
-    } catch as err {
+    }
+    catch as err
+    {
         ; Log the failure so operators can diagnose enumeration gaps.
         ; Previously a bare `try` silently dropped the window.
         _Log(1, "list_windows: skipping HWND " Format("0x{:X}", hwnd)
@@ -989,7 +1106,8 @@ _EnumWindowsCollect(hwnd, lParam) {
 /**
  * list_windows — enumerate all top-level windows via EnumWindows.
  */
-_HandleListWindows(params) {
+_HandleListWindows(params)
+{
     filter := params.Has("filter") ? params["filter"] : ""
     filterLower := StrLower(filter)
     
@@ -1004,10 +1122,11 @@ _HandleListWindows(params) {
     _enumWindowsTmp := ""  ; release global reference
     
     ; ── Apply optional filter post-collection ───────────────────
-    if filterLower {
+    if (filterLower) {
         filtered := []
-        for win in windows {
-            if InStr(StrLower(win.title), filterLower)
+        for win in windows
+        {
+            if (InStr(StrLower(win.title), filterLower))
                     || InStr(StrLower(win.exe), filterLower)
                 filtered.Push(win)
         }
@@ -1023,15 +1142,17 @@ _HandleListWindows(params) {
 /**
  * get_window_info — detailed info for a specific window.
  */
-_HandleGetWindowInfo(params) {
-    if !params.Has("hwnd") || !params["hwnd"]
+_HandleGetWindowInfo(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
         throw Error("hwnd is required")
 
     hwnd := params["hwnd"]
-    if hwnd is String
+    if (hwnd is String)
         hwnd := Integer(hwnd)
 
-    try {
+    try
+    {
         title := WinGetTitle(hwnd)
         class := WinGetClass(hwnd)
         pid := WinGetPID(hwnd)
@@ -1055,7 +1176,9 @@ _HandleGetWindowInfo(params) {
             elevated: elevated,
             isBrowser: _IsBrowserProcess(pid)
         }
-    } catch as err {
+    }
+    catch as err
+    {
         throw Error("Failed to get window info: " err.Message)
     }
 }
@@ -1063,30 +1186,36 @@ _HandleGetWindowInfo(params) {
 /**
  * check_match_count — count how many elements match a condition.
  */
-_HandleCheckMatchCount(params) {
+_HandleCheckMatchCount(params)
+{
     root := 0
-    if params.Has("hwnd") && params["hwnd"] {
+    if (params.Has("hwnd") && params["hwnd"]) {
         cr := _MakeCacheRequest()
         root := UIA.ElementFromHandle(params["hwnd"], cr)
-    } else {
+    }
+    else
+    {
         root := UIA.GetFocusedElement()
     }
-    if !root
+    if (!root)
         throw Error("Could not resolve root")
 
     condMap := _BuildCondition(params.Has("condition") ? params["condition"] : {})
-    if condMap = ""
+    if (condMap = "")
         throw Error("condition is required")
 
     scope := _ResolveScope(params.Has("scope") ? params["scope"] : "Descendants")
     matchMode := _ResolveMatchMode(params.Has("matchMode") ? params["matchMode"] : "Exact")
 
-    try {
+    try
+    {
         matches := root.FindAll(condMap, matchMode, scope)
-        if IsObject(matches)
+        if (IsObject(matches))
             return {count: matches.Length}
         return {count: 0}
-    } catch {
+    }
+    catch
+    {
         return {count: 0}
     }
 }
@@ -1094,12 +1223,15 @@ _HandleCheckMatchCount(params) {
 /**
  * get_child_elements — return direct children of a resolved element.
  */
-_HandleGetChildElements(params) {
+_HandleGetChildElements(params)
+{
     el := _ResolveLocator(params)
     children := []
-    try {
+    try
+    {
         child := UIA.TreeWalkerTrue.GetFirstChildElement(el)
-        while child {
+        while (child)
+        {
             children.Push(_ElementSummary(child))
             child := UIA.TreeWalkerTrue.GetNextSiblingElement(child)
         }
@@ -1113,14 +1245,18 @@ _HandleGetChildElements(params) {
 /**
  * get_bounding_rect — return the bounding rectangle of an element.
  */
-_HandleGetBoundingRect(params) {
+_HandleGetBoundingRect(params)
+{
     el := _ResolveLocator(params)
-    try {
+    try
+    {
         raw := el.GetPropertyValue(30001)
-        if IsObject(raw)
+        if (IsObject(raw))
             return {left: raw.l, top: raw.t, right: raw.r, bottom: raw.b}
         return {left: 0, top: 0, right: 0, bottom: 0}
-    } catch {
+    }
+    catch
+    {
         return {left: 0, top: 0, right: 0, bottom: 0}
     }
 }
@@ -1128,13 +1264,14 @@ _HandleGetBoundingRect(params) {
 /**
  * wait_for_element — poll until element matching condition exists or timeout.
  */
-_HandleWaitForElement(params) {
+_HandleWaitForElement(params)
+{
     timeout := params.Has("timeout") ? params["timeout"] : 5000
     hwnd := params.Has("hwnd") ? params["hwnd"] : 0
     condObj := params.Has("condition") ? params["condition"] : {}
 
     condMap := _BuildCondition(condObj)
-    if condMap = ""
+    if (condMap = "")
         throw Error("condition is required")
 
     scope := _ResolveScope(params.Has("scope") ? params["scope"] : "Descendants")
@@ -1142,21 +1279,25 @@ _HandleWaitForElement(params) {
 
     ; Get root element
     root := 0
-    if hwnd {
+    if (hwnd) {
         cr := _MakeCacheRequest()
         root := UIA.ElementFromHandle(hwnd, cr)
-    } else {
+    }
+    else
+    {
         root := UIA.GetFocusedElement()
     }
-    if !root
+    if (!root)
         throw Error("Could not resolve root")
 
     ; Poll
     start := A_TickCount
-    loop {
-        try {
+    loop
+    {
+        try
+        {
             matches := root.FindAll(condMap, matchMode, scope)
-            if IsObject(matches) && matches.Length > 0 {
+            if (IsObject(matches) && matches.Length > 0) {
                 return {
                     found: true,
                     elapsed: A_TickCount - start,
@@ -1164,7 +1305,7 @@ _HandleWaitForElement(params) {
                 }
             }
         }
-        if A_TickCount - start >= timeout
+        if (A_TickCount - start >= timeout)
             break
         Sleep(100)
     }
@@ -1178,19 +1319,21 @@ _HandleWaitForElement(params) {
 /**
  * get_element_at_point — return element at screen (x, y).
  */
-_HandleGetElementAtPoint(params) {
-    if !params.Has("x") || !params.Has("y")
+_HandleGetElementAtPoint(params)
+{
+    if (!params.Has("x") || !params.Has("y"))
         throw Error("x and y are required")
 
     x := params["x"], y := params["y"]
 
     ; Get window under point
     hwnd := 0
-    try {
+    try
+    {
         pt := (x & 0xFFFFFFFF) | (y << 32)
         hwnd := DllCall("WindowFromPoint", "Int64", pt, "Ptr")
     }
-    if !hwnd
+    if (!hwnd)
         throw Error("No window at (" x ", " y ")")
 
     targetPid := WinGetPID("ahk_id " hwnd)
@@ -1206,7 +1349,8 @@ _HandleGetElementAtPoint(params) {
 ;  Full Element Result Builder (used by multiple handlers)
 ; ══════════════════════════════════════════════════════════════════
 
-_BuildFullElementResult(el, windowEl, hwnd, targetPid) {
+_BuildFullElementResult(el, windowEl, hwnd, targetPid)
+{
     global UIA
     props := _ElementToMap(el)
     patterns := _GetPatterns(el)
@@ -1223,28 +1367,30 @@ _BuildFullElementResult(el, windowEl, hwnd, targetPid) {
     result["ConditionString"] := condition
 
     ; Window info
-    if hwnd {
-        try {
+    if (hwnd) {
+        try
+        {
             result["WindowTitle"] := WinGetTitle(hwnd)
             result["WindowClass"] := WinGetClass(hwnd)
             result["WindowExe"] := ProcessGetName(targetPid ? targetPid : WinGetPID("ahk_id " hwnd))
         }
     }
 
-    return result
+    return(result)
 }
 
 ; ══════════════════════════════════════════════════════════════════
 ;  TCP Server
 ; ══════════════════════════════════════════════════════════════════
 
-_HandleRequest(jsonStr) {
+_HandleRequest(jsonStr)
+{
     ; Parse JSON
     request := ""
     try request := JSON.Parse(jsonStr)
     catch {
         _Log(1, "JSON parse error: " SubStr(jsonStr, 1, 200))
-        return _RpcError("", -32700, "Parse error")
+        return(_RpcError("", -32700, "Parse error"))
     }
 
     id := request.Has("id") ? request["id"] : ""
@@ -1277,29 +1423,33 @@ _HandleRequest(jsonStr) {
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )
 
-    if !handlers.Has(method) {
+    if (!handlers.Has(method)) {
         _Log(1, "Method not found: " method)
-        return _RpcError(id, -32601, "Method not found: " method)
+        return(_RpcError(id, -32601, "Method not found: " method))
     }
 
     ; ── Truncated params for debug log ──────────
     ; Prevent log bloat from large payloads while still capturing
     ; enough to replay failing requests.
     paramsStr := ""
-    try {
+    try
+    {
         s := JSON.Stringify(params, 0)
         paramsStr := StrLen(s) <= 1024 ? s : SubStr(s, 1, 1024) "… (len=" StrLen(s) ")"
     } catch
         paramsStr := "[serialization error]"
 
     tick := A_TickCount
-    try {
+    try
+    {
         _Log(3, "Dispatching: " method " params=" paramsStr)
         result := handlers[method](params)
         elapsed := A_TickCount - tick
         _Log(3, "Completed: " method " (" elapsed "ms)")
-        return _RpcResult(id, result)
-    } catch as err {
+        return(_RpcResult(id, result))
+    }
+    catch as err
+    {
         elapsed := A_TickCount - tick
         errDetail := err.HasProp("What") ? " (" err.What ")" : ""
         _Log(1, "Handler error [" method "] (" elapsed "ms): " err.Message . errDetail . " | params=" paramsStr)
@@ -1308,13 +1458,14 @@ _HandleRequest(jsonStr) {
         ; UIA bridges like VB6), the COM apartment may be unstable.
         ; A short sleep lets pending COM RPC calls drain before the
         ; next request, preventing a silent native crash.
-        if InStr(err.Message, "0x8") || InStr(err.Message, "ComCall")
+        if (InStr(err.Message, "0x8") || InStr(err.Message, "ComCall"))
             Sleep(50)
-        return _RpcError(id, -32000, err.Message, err.HasProp("What") ? err.What : "")
+        return(_RpcError(id, -32000, err.Message, err.HasProp("What") ? err.What : ""))
     }
 }
 
-_DoShutdown(*) {
+_DoShutdown(*)
+{
     _Log(2, "Shutting down")
     FileDelete(PORT_FILE)
     try DllCall("Ws2_32\WSACleanup")
@@ -1338,15 +1489,16 @@ _Log(2, "Engine PID=" ProcessExist() " starting on port " ENGINE_PORT)
 _OnAccept := _SocketOnAccept
 _OnRecv   := _SocketOnRecv
 _OnClose  := _SocketOnClose
-try {
+try
+{
     ; Initialize Winsock (required before any socket calls)
     wsadata := Buffer(400, 0)
     r := DllCall("Ws2_32\WSAStartup", "UShort", 0x0202, "Ptr", wsadata)
-    if r != 0
+    if (r != 0)
         throw Error("WSAStartup() failed: " r)
 
     srv := DllCall("Ws2_32\socket", "Int", 2, "Int", 1, "Int", 0, "Ptr") ; AF_INET, SOCK_STREAM, 0
-    if srv = -1
+    if (srv = -1)
         throw Error("socket() failed: " WSAGetLastError())
 
     ; Allow address reuse
@@ -1357,14 +1509,16 @@ try {
     addr := Buffer(16, 0)
     NumPut("UShort", 2, "UShort", _Htons(ENGINE_PORT), "UInt", 0x0100007F, addr) ; AF_INET, port, 127.0.0.1
     r := DllCall("Ws2_32\bind", "Ptr", srv, "Ptr", addr, "Int", 16)
-    if r != 0
+    if (r != 0)
         throw Error("bind() failed: " WSAGetLastError() " — port " ENGINE_PORT " may be in use")
 
     ; Listen
     DllCall("Ws2_32\listen", "Ptr", srv, "Int", 1)
     serverBound := true
     _Log(2, "TCP server bound to 127.0.0.1:" ENGINE_PORT)
-} catch as err {
+}
+catch as err
+{
     OutputDebug "UIA_MCP_Engine: FATAL — " err.Message "`n"
     ; Write error to port file so the extension can detect the failure
     try FileDelete(PORT_FILE)
@@ -1389,12 +1543,16 @@ SetTimer(_CheckIdle, 10000)
 ; to avoid AHK v2 scoping restrictions.  The _InspectHotkeyHandler
 ; function delegates to _HandleInspectAtCursor — the same rich
 ; pipeline used by JSON-RPC.
-_InspectHotkeyHandler(*) {
+_InspectHotkeyHandler(*)
+{
     global _lastActivity
     _lastActivity := A_TickCount
-    try {
+    try
+    {
         result := _HandleInspectAtCursor({})
-    } catch as err {
+    }
+    catch as err
+    {
         _Log(1, "Hotkey error: " err.Message)
         ToolTip("UIA inspect failed: " err.Message)
         SetTimer(() => ToolTip(), -3000)
@@ -1402,32 +1560,33 @@ _InspectHotkeyHandler(*) {
     }
     ; Handle graceful error objects
     isMap := (result is Map)
-    if IsObject(result) && ((isMap && result.Has("error")) || (!isMap && result.HasProp("error"))) && result["error"] {
+    if (IsObject(result) && ((isMap && result.Has("error")) || (!isMap && result.HasProp("error"))) && result["error"]) {
         msg := isMap ? result["message"] : result.HasProp("message") ? result.message : ""
         ToolTip(msg || "Not accessible")
         SetTimer(() => ToolTip(), -3000)
         return
     }
     ; Show result tooltip with full element info
-    try {
+    try
+    {
         elType   := isMap ? (result.Has("LocalizedType") ? result["LocalizedType"] : result.Has("Type") ? result["Type"] : "") : ""
         elName   := isMap ? (result.Has("Name") ? result["Name"] : "") : ""
         elClass  := isMap ? (result.Has("ClassName") ? result["ClassName"] : "") : ""
         elAction := isMap ? (result.Has("InferredAction") ? result["InferredAction"] : "") : ""
         winTitle := isMap ? (result.Has("WindowTitle") ? result["WindowTitle"] : "") : ""
 
-        if elType = ""
+        if (elType = "")
             elType := "?"
-        if elName = ""
+        if (elName = "")
             elName := "(no name)"
-        if elClass = ""
+        if (elClass = "")
             elClass := "?"
 
         summary := ""
-        if winTitle
+        if (winTitle)
             summary .= "Window: " winTitle "`n"
         summary .= Format("{} `"{}`"`nClass: {}", elType, elName, elClass)
-        if elAction
+        if (elAction)
             summary .= "`nAction: " elAction
         ToolTip(summary, , , 3)
         ToolTip(summary, , , 3)
@@ -1435,7 +1594,9 @@ _InspectHotkeyHandler(*) {
 
         try A_Clipboard := JSON.Stringify(result, 4)
         _Log(3, "Hotkey inspect: " elType " " elName)
-    } catch as err2 {
+    }
+    catch as err2
+    {
         _Log(1, "Hotkey display error: " err2.Message)
     }
 }
@@ -1445,18 +1606,20 @@ _Log(2, "Inspect hotkey registered: " INSPECT_HOTKEY)
 
 ; Keep tray icon visible so the user knows the engine is running.
 
-_JoinPatterns(patterns) {
-    if !IsObject(patterns) || !patterns.Length
-        return "none"
+_JoinPatterns(patterns)
+{
+    if (!IsObject(patterns) || !patterns.Length)
+        return("none")
     list := ""
-    for i, p in patterns {
-        if i > 1
+    for i, p in patterns
+    {
+        if (i > 1)
             list .= ", "
         list .= p.name
-        if p.HasProp("isReadOnly")
+        if (p.HasProp("isReadOnly"))
             list .= p.isReadOnly ? "(RO)" : "(RW)"
     }
-    return list
+    return(list)
 }
 
 ; Announce ready
@@ -1469,20 +1632,21 @@ OutputDebug "UIA_MCP_Engine: listening on 127.0.0.1:" ENGINE_PORT "`n"
 global _clientSock := 0
 global _recvBuf := ""
 
-_SocketOnAccept(wp, lp, msg, hwnd) {
+_SocketOnAccept(wp, lp, msg, hwnd)
+{
     global srv, _clientSock, _recvBuf, _OnRecv, _OnClose, _lastActivity
 
     ; Only accept if not already serving a client (single-connection model)
-    if _clientSock {
+    if (_clientSock) {
         ; Reject extra connections
         tmpSock := DllCall("Ws2_32\accept", "Ptr", srv, "Ptr", 0, "Ptr", 0, "Ptr")
-        if tmpSock != -1
+        if (tmpSock != -1)
             DllCall("Ws2_32\closesocket", "Ptr", tmpSock)
         return
     }
 
     _clientSock := DllCall("Ws2_32\accept", "Ptr", srv, "Ptr", 0, "Ptr", 0, "Ptr")
-    if _clientSock = -1
+    if (_clientSock = -1)
         return
     _Log(3, "Client connected")
 
@@ -1494,12 +1658,13 @@ _SocketOnAccept(wp, lp, msg, hwnd) {
     DllCall("Ws2_32\WSAAsyncSelect", "Ptr", _clientSock, "Ptr", A_ScriptHwnd, "UInt", 0x8000, "Int", 0x01 | 0x20) ; FD_READ | FD_CLOSE
 }
 
-_SocketOnRecv(wp, lp, msg, hwnd) {
+_SocketOnRecv(wp, lp, msg, hwnd)
+{
     global _clientSock, _recvBuf, _lastActivity
 
     buf := Buffer(65536, 0)
     n := DllCall("Ws2_32\recv", "Ptr", _clientSock, "Ptr", buf, "Int", 65536, "Int", 0)
-    if n <= 0 {
+    if (n <= 0) {
         _CloseClient()
         return
     }
@@ -1508,40 +1673,45 @@ _SocketOnRecv(wp, lp, msg, hwnd) {
     _lastActivity := A_TickCount
 
     ; Process all complete JSON messages (newline-delimited)
-    while (pos := InStr(_recvBuf, "`n")) {
+while (pos := InStr(_recvBuf, "`n"))
+{
         line := SubStr(_recvBuf, 1, pos - 1)
         _recvBuf := SubStr(_recvBuf, pos + 1)
         line := Trim(line, " `t`r")
-        if line = ""
+        if (line = "")
             continue
         response := _HandleRequest(line)
         _SendResponse(response)
     }
 }
 
-_SendResponse(str) {
+_SendResponse(str)
+{
     global _clientSock
     buf := Buffer(StrPut(str, "UTF-8"), 0)
     StrPut(str, buf, "UTF-8")
     DllCall("Ws2_32\send", "Ptr", _clientSock, "Ptr", buf, "Int", buf.Size - 1, "Int", 0)
 }
 
-_SocketOnClose(wp, lp, msg, hwnd) {
+_SocketOnClose(wp, lp, msg, hwnd)
+{
     _CloseClient()
 }
 
-_CloseClient() {
+_CloseClient()
+{
     global _clientSock, _recvBuf
-    if _clientSock {
+    if (_clientSock) {
         DllCall("Ws2_32\closesocket", "Ptr", _clientSock)
         _clientSock := 0
     }
     _recvBuf := ""
 }
 
-_CheckIdle() {
+_CheckIdle()
+{
     global _lastActivity, _clientSock
-    if !_clientSock && (A_TickCount - _lastActivity > IDLE_TIMEOUT_MS) {
+    if (!_clientSock && (A_TickCount - _lastActivity > IDLE_TIMEOUT_MS)) {
         OutputDebug "UIA_MCP_Engine: idle timeout, shutting down`n"
         _DoShutdown()
     }
@@ -1551,11 +1721,13 @@ _CheckIdle() {
 ;  Network Helpers
 ; ══════════════════════════════════════════════════════════════════
 
-_Htons(val) {
+_Htons(val)
+{
     return DllCall("ws2_32\htons", "ushort", val, "ushort")
 }
 
-WSAGetLastError() {
+WSAGetLastError()
+{
     return DllCall("Ws2_32\WSAGetLastError")
 }
 
@@ -1563,7 +1735,8 @@ WSAGetLastError() {
 ; We use a static variable to avoid registering multiple times
 OnMessage(0x8000, _WmSocketHandler)
 
-_WmSocketHandler(wp, lp, msg, hwnd) {
+_WmSocketHandler(wp, lp, msg, hwnd)
+{
     global _clientSock
     sock := wp
     event := lp & 0xFFFF
