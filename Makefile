@@ -35,7 +35,9 @@ NPM    := cd $(EXT_DIR) && npm
 BUNDLE := cd $(EXT_DIR) && NODE_NO_WARNINGS=DEP0169 node esbuild.config.mjs
 VSCE   := cd $(EXT_DIR) && NODE_NO_WARNINGS=DEP0169 npx @vscode/vsce
 
-.PHONY: all package install test test-coverage clean deps force-build typecheck
+ENGINE_AHK := $(CURDIR)/UIA_MCP_Engine.ahk
+
+.PHONY: all package install test test-coverage clean deps force-build typecheck validate
 
 # ── Default ──────────────────────────────────────────────────────
 
@@ -72,6 +74,19 @@ build: $(OUT_MAIN) $(OUT_BRIDGE)
 
 typecheck: deps
 	cd $(EXT_DIR) && npx tsc --noEmit -p ./
+
+# ── Validate AHK engine (syntax-only, no execution) ──────────────
+
+validate:
+	@echo "==> Validating AHK engine..."
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass \
+		-File 'C:\Scripts\DetectAHKErrorDialog.ps1' \
+		-Validate -ScriptPath "$$(wslpath -w $(ENGINE_AHK))" -TimeoutSec 5; \
+	case $$? in \
+		0) echo "  AHK validate: OK" ;; \
+		3) echo "  AHK validate: FAILED (error dialog)" ; exit 1 ;; \
+		*) echo "  AHK validate: FAILED" ; exit 1 ;; \
+	esac
 
 # ── Force rebuild (skip incremental check) ────────────────────────
 
@@ -134,6 +149,7 @@ help:
 	@echo "  make            Bundle with esbuild (incremental, default)"
 	@echo "  make force-build  Force rebuild (skip incremental check)"
 	@echo "  make typecheck  Run tsc for type checking (no emit)"
+	@echo "  make validate   Validate AHK engine syntax (/iLib, no execution)"
 	@echo "  make deps       Install npm dependencies"
 	@echo "  make package    Build + create .vsix bundle"
 	@echo "  make install    Build + package + install into VS Code"

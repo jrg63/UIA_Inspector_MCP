@@ -17,6 +17,7 @@ DetectHiddenWindows true
 ; ══════════════════════════════════════════════════════════════════
 
 #Include <UIA>
+#Include <Logger>
 #Include <UIA_Inspector\cjson>
 
 ; ── cJSON configuration ───────────────────────
@@ -26,10 +27,12 @@ JSON.BoolsAsInts := 0
 ; ── Configuration ─────────────────────────────
 global ENGINE_PORT      := 9876
 global IDLE_TIMEOUT_MS  := 300000   ; 5 minutes
-global LOG_LEVEL        := 1        ; 0=none 1=error 2=info 3=debug
 global INSPECT_HOTKEY   := "^+I"    ; Ctrl+Shift+I
-global LOG_FILE         := A_Temp "\UIA_MCP_Engine.log"
 global PORT_FILE         := A_Temp "\UIA_MCP_Engine.port"
+
+; ── Logger ─────────────────────────────────────
+global engineLog := Logger("UIAEngine", A_Temp "\UIA_MCP_Engine.log", Logger.LEVEL_INFO, false)
+; debugOut=false because we write to file only (no OutputDebug in daemon context)
 
 ; Parse command-line args
 for i, arg in A_Args
@@ -41,31 +44,15 @@ for i, arg in A_Args
     if (arg = "--inspect-hotkey" && A_Args.Has(i + 1))
         INSPECT_HOTKEY := A_Args[i + 1]
     if (arg = "--log-file" && A_Args.Has(i + 1))
-        LOG_FILE := A_Args[i + 1]
+        engineLog.FilePath := A_Args[i + 1]
     if (arg = "--log-level" && A_Args.Has(i + 1)) {
         switch A_Args[i + 1], 0 {
-            case "none":  LOG_LEVEL := 0
-            case "error": LOG_LEVEL := 1
-            case "info":  LOG_LEVEL := 2
-            case "debug": LOG_LEVEL := 3
+            case "none":  engineLog.SetLevel(Logger.LEVEL_OFF)
+            case "error": engineLog.SetLevel(Logger.LEVEL_ERROR)
+            case "info":  engineLog.SetLevel(Logger.LEVEL_INFO)
+            case "debug": engineLog.SetLevel(Logger.LEVEL_DEBUG)
         }
     }
-}
-
-; ══════════════════════════════════════════════════════════════════
-;  Logging — writes to disk file AND stderr
-; ══════════════════════════════════════════════════════════════════
-
-_Log(level, msg)
-{
-    if (level > LOG_LEVEL)
-        return
-    static labels := ["NONE", "ERROR", "INFO ", "DEBUG"]
-    label := labels[level + 1]
-    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
-    line := Format("[{}] {} {}`n", ts, label, msg)
-    try FileAppend(line, LOG_FILE)   ; persistent log on disk
-    try FileAppend(line, "*")        ; also stderr for daemon capture
 }
 
 ; ══════════════════════════════════════════════════════════════════
@@ -829,11 +816,11 @@ _HandleInspectAtCursor(params)
     MouseGetPos(&mX, &mY, &winUnderMouse)
     if (!winUnderMouse)
         throw Error("No window under cursor")
-    _Log(3, "InspectAtCursor: mouse at (" mX "," mY ") hwnd=0x" Format("{:X}", winUnderMouse))
+    engineLog.Debug("InspectAtCursor: mouse at (" mX "," mY ") hwnd=0x" Format("{:X}", winUnderMouse))
 
     ; Check elevation
     targetPid := WinGetPID("ahk_id " winUnderMouse)
-    _Log(3, "InspectAtCursor: targetPid=" targetPid)
+    engineLog.Debug("InspectAtCursor: targetPid=" targetPid)
     elevated := _IsElevated(targetPid)
     if (elevated && !A_IsAdmin) {
         return {
@@ -851,12 +838,12 @@ _HandleInspectAtCursor(params)
             UIA.ActivateChromiumAccessibility(winUnderMouse)
     }
 
-    _Log(3, "InspectAtCursor: building cache request...")
+    engineLog.Debug("InspectAtCursor: building cache request...")
     cr := _MakeCacheRequest()
-    _Log(3, "InspectAtCursor: getting window element from handle...")
+    engineLog.Debug("InspectAtCursor: getting window element from handle...")
     windowEl := UIA.ElementFromHandle(winUnderMouse, cr)
 
-    _Log(3, "InspectAtCursor: calling ElementFromPoint...")
+    engineLog.Debug("InspectAtCursor: calling ElementFromPoint...")
     el := 0
     try
     {
@@ -902,9 +889,9 @@ _HandleInspectAtCursor(params)
             targetName: ProcessGetName(targetPid)
         }
 
-    _Log(3, "InspectAtCursor: element found, building full result...")
+    engineLog.Debug("InspectAtCursor: element found, building full result...")
     result := _BuildFullElementResult(el, windowEl, winUnderMouse, targetPid)
-    _Log(3, "InspectAtCursor: done, Type=" (result.HasProp("Type") ? result["Type"] : "?"))
+    engineLog.Debug("InspectAtCursor: done, Type=" (result.HasProp("Type") ? result["Type"] : "?"))
     return(result)
 }
 
@@ -1128,7 +1115,7 @@ _EnumWindowsCollect(hwnd, lParam)
     {
         ; Log the failure so operators can diagnose enumeration gaps.
         ; Previously a bare `try` silently dropped the window.
-        _Log(1, "list_windows: skipping HWND " Format("0x{:X}", hwnd)
+        engineLog.Error("list_windows: skipping HWND " Format("0x{:X}", hwnd)
                 . " — " . err.Message)
     }
     return true  ; continue enumeration
@@ -2364,7 +2351,7 @@ _HandleRequest(jsonStr)
     request := ""
     try request := JSON.Parse(jsonStr)
     catch {
-        _Log(1, "JSON parse error: " SubStr(jsonStr, 1, 200))
+        engineLog.Error("JSON parse error: " SubStr(jsonStr, 1, 200))
         return(_RpcError("", -32700, "Parse error"))
     }
 
@@ -2414,7 +2401,7 @@ _HandleRequest(jsonStr)
     )
 
     if (!handlers.Has(method)) {
-        _Log(1, "Method not found: " method)
+        engineLog.Error("Method not found: " method)
         return(_RpcError(id, -32601, "Method not found: " method))
     }
 
@@ -2432,17 +2419,17 @@ _HandleRequest(jsonStr)
     tick := A_TickCount
     try
     {
-        _Log(3, "Dispatching: " method " params=" paramsStr)
+        engineLog.Debug("Dispatching: " method " params=" paramsStr)
         result := handlers[method](params)
         elapsed := A_TickCount - tick
-        _Log(3, "Completed: " method " (" elapsed "ms)")
+        engineLog.Debug("Completed: " method " (" elapsed "ms)")
         return(_RpcResult(id, result))
     }
     catch as err
     {
         elapsed := A_TickCount - tick
         errDetail := err.HasProp("What") ? " (" err.What ")" : ""
-        _Log(1, "Handler error [" method "] (" elapsed "ms): " err.Message . errDetail . " | params=" paramsStr)
+        engineLog.Error("Handler error [" method "] (" elapsed "ms): " err.Message . errDetail . " | params=" paramsStr)
         ; ── COM stabilisation ──────────────────────
         ; After a COM error (especially E_INVALIDARG from legacy
         ; UIA bridges like VB6), the COM apartment may be unstable.
@@ -2456,7 +2443,7 @@ _HandleRequest(jsonStr)
 
 _DoShutdown(*)
 {
-    _Log(2, "Shutting down")
+    engineLog.Info("Shutting down")
     FileDelete(PORT_FILE)
     try DllCall("Ws2_32\WSACleanup")
     ExitApp()
@@ -2473,7 +2460,7 @@ global serverBound := false
 ; Write port file so the extension can find us
 try FileDelete(PORT_FILE)
 FileAppend("127.0.0.1:" ENGINE_PORT "`n" ProcessExist(), PORT_FILE)
-_Log(2, "Engine PID=" ProcessExist() " starting on port " ENGINE_PORT)
+engineLog.Info("Engine PID=" ProcessExist() " starting on port " ENGINE_PORT)
 
 ; Create listening socket
 _OnAccept := _SocketOnAccept
@@ -2505,7 +2492,7 @@ try
     ; Listen
     DllCall("Ws2_32\listen", "Ptr", srv, "Int", 1)
     serverBound := true
-    _Log(2, "TCP server bound to 127.0.0.1:" ENGINE_PORT)
+    engineLog.Info("TCP server bound to 127.0.0.1:" ENGINE_PORT)
 }
 catch as err
 {
@@ -2543,7 +2530,7 @@ _InspectHotkeyHandler(*)
     }
     catch as err
     {
-        _Log(1, "Hotkey error: " err.Message)
+        engineLog.Error("Hotkey error: " err.Message)
         ToolTip("UIA inspect failed: " err.Message)
         SetTimer(() => ToolTip(), -3000)
         return
@@ -2583,16 +2570,16 @@ _InspectHotkeyHandler(*)
         SetTimer(() => ToolTip(), -5000)
 
         try A_Clipboard := JSON.Stringify(result, 4)
-        _Log(3, "Hotkey inspect: " elType " " elName)
+        engineLog.Debug("Hotkey inspect: " elType " " elName)
     }
     catch as err2
     {
-        _Log(1, "Hotkey display error: " err2.Message)
+        engineLog.Error("Hotkey display error: " err2.Message)
     }
 }
 
 Hotkey(INSPECT_HOTKEY, _InspectHotkeyHandler, "On")
-_Log(2, "Inspect hotkey registered: " INSPECT_HOTKEY)
+engineLog.Info("Inspect hotkey registered: " INSPECT_HOTKEY)
 
 ; Keep tray icon visible so the user knows the engine is running.
 
@@ -2638,7 +2625,7 @@ _SocketOnAccept(wp, lp, msg, hwnd)
     _clientSock := DllCall("Ws2_32\accept", "Ptr", srv, "Ptr", 0, "Ptr", 0, "Ptr")
     if (_clientSock = -1)
         return
-    _Log(3, "Client connected")
+    engineLog.Debug("Client connected")
 
     _recvBuf := ""
     _lastActivity := A_TickCount
