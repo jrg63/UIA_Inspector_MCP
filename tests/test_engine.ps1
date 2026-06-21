@@ -684,6 +684,39 @@ function Test-Utility {
         return ($args[0].ahkCode -match 'WaitElement')
     }
 
+    # Get element code — generate a runnable script for a specific element
+    if ($win.result.windows.Count -gt 0) {
+        $hwnd = $win.result.windows[0].hwnd
+        $r = Send-JsonRpc -Method "uia_get_element_code" -Params @{hwnd = $hwnd; condition = @{Type = "Window"}}
+        Assert-Result $r "get_element_code returns ahkCode" {
+            return ($null -ne $args[0].ahkCode)
+        }
+        if ($r.result.ahkCode) {
+            Assert-Result $r "ahkCode contains Main()" {
+                return ($args[0].ahkCode -match 'Main\(\)')
+            }
+            Assert-Result $r "ahkCode contains local winEl" {
+                return ($args[0].ahkCode -match 'local winEl')
+            }
+            Assert-Result $r "ahkCode contains local el" {
+                return ($args[0].ahkCode -match 'local el')
+            }
+            Assert-Result $r "ahkCode contains FindFirst" {
+                return ($args[0].ahkCode -match 'FindFirst')
+            }
+            Assert-Result $r "ahkCode contains #Include <UIA>" {
+                return ($args[0].ahkCode -match '#Include <UIA>')
+            }
+            Write-Host "    Generated code:" -ForegroundColor DarkGray
+            Write-Host ("    " + ($r.result.ahkCode -replace "`n", "`n    ")) -ForegroundColor DarkGray
+        }
+    }
+    else {
+        Write-Warn
+        Write-Host "    No window for get_element_code test" -ForegroundColor Yellow
+        $script:warned++
+    }
+
     # Window management — Activate requires real HWND
     $win = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
     if ($win.result.windows.Count -gt 0) {

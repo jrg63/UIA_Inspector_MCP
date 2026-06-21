@@ -192,15 +192,37 @@ what element is at screen coordinates (x, y)? (use the center of the bounding re
 
 ---
 
-## 18. AHK code generation — generate automation script
+## 18. uia_get_element_code — generate runnable script for a specific element
 
-After finding a button:
+First find an element (e.g., a button in VS Code or Notepad), then:
 
 ```
-generate AHK v2 code to click the OK button in the VS Code window
+generate a complete AHK v2 automation script for the button named "OK" in the current window
 ```
 
-**Validates:** The MCP server provides AHK v2 code generation instructions.
+Or more precisely:
+
+```
+use uia_get_element_code to generate code that targets {Type: "Button", Name: "OK"} in the current window
+```
+
+**Validates:** `uia_get_element_code` tool. Should return a complete, runnable `.ahk` script with `#Requires`, `#Include <UIA>`, `Main()`/`ExitApp`, `local winEl := ...`, `local el := ...`, and `el.Action()`.
+
+---
+
+## 19. uia_get_code_recipe — get code templates
+
+```
+show me the available code recipes for UIA automation
+```
+
+Then:
+
+```
+give me the find_and_click recipe
+```
+
+**Validates:** `uia_get_code_recipe` tool. Should return proven AHK v2 code templates.
 
 ---
 
@@ -225,4 +247,5 @@ generate AHK v2 code to click the OK button in the VS Code window
 | 15 | `wait_for_element`       | ☐      |
 | 16 | `get_element_at_point`   | ☐      |
 | 17 | Multi-step chaining      | ☐      |
-| 18 | AHK code generation      | ☐      |
+| 18 | `uia_get_element_code`  | ☐      |
+| 19 | `uia_get_code_recipe`   | ☐      |

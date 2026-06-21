@@ -31,6 +31,7 @@ export const TOOL_NAMES = [
     "uia_manage_window",
     "uia_capture_screenshot",
     "uia_get_code_recipe",
+    "uia_get_element_code",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -603,6 +604,42 @@ export function buildToolDefinitions(): ToolDefinition[] {
                     },
                 },
                 required: ["recipe"],
+            },
+        },
+        {
+            name: "uia_get_element_code",
+            description:
+                "Generate a complete, runnable AHK v2 script that targets a specific UI element. Resolves the element via the standard locator (hwnd, condition, scope, matchMode, index), builds the condition string, infers the best action (Invoke, Click, SetValue, etc.), and returns a self-contained script with #Requires, #Include, Main(), and ExitApp. The generated code follows the same style as UIA_Inspector's Add Element button. Use this when you need a ready-to-run automation snippet for a specific button, field, or control.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    condition: {
+                        type: "object",
+                        description:
+                            'UIA condition object, e.g. {"Type":"Button","Name":"OK"} or {"AutomationId":"submitBtn"}',
+                    },
+                    hwnd: {
+                        type: "string",
+                        description:
+                            "Optional hex HWND of the target window. If omitted, uses the focused element's window.",
+                    },
+                    scope: {
+                        type: "string",
+                        enum: ["Descendants", "Children", "Subtree", "Element"],
+                        description: "Search scope. Default: Descendants.",
+                    },
+                    matchMode: {
+                        type: "string",
+                        enum: ["Exact", "Contains", "StartsWith", "EndsWith"],
+                        description: "String match mode. Default: Exact.",
+                    },
+                    index: {
+                        type: "number",
+                        description:
+                            "1-based index when multiple matches exist. Default: 1.",
+                    },
+                },
+                required: ["condition"],
             },
         },
     ];

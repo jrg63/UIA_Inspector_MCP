@@ -2344,6 +2344,67 @@ _ListRecipes()
         . "tree_explore, grid_read, wait_and_click, combo_select, list_recipes"
 }
 
+/**
+ * uia_get_element_code — return a runnable AHK v2 code snippet that targets a
+ * specific element using the standard locator. Resolves the element, builds its
+ * condition string, infers the best action, and returns a complete script that the
+ * user can save and run directly.
+ *
+ * The generated code follows the same style as UIA_Inspector's "Add Element" button:
+ * a self-contained script with Main()/ExitApp, local variable assignments, and the
+ * action called on the resolved element.
+ *
+ * @param {Object} params - standard locator: hwnd, condition, scope, matchMode, index
+ * @returns {Object} {ahkCode: "..."} with the full AHK v2 script
+ */
+_HandleGetElementCode(params)
+{
+    el := _ResolveLocator(params)
+
+    ; Get the window HWND for title resolution
+    hwnd := 0
+    try hwnd := el.CurrentNativeWindowHandle
+    if (!hwnd)
+        try hwnd := el.GetPropertyValue(30020)
+
+    ; Build the winTitle string (title ahk_exe exeName)
+    winTitle := ""
+    try
+    {
+        title := WinGetTitle(hwnd)
+        exe := ProcessGetName(WinGetPID("ahk_id " hwnd))
+        winTitle := title " ahk_exe " exe
+    }
+    if (!winTitle)
+        winTitle := "ahk_id " hwnd
+
+    ; Build condition and action
+    condStr := _BuildConditionString(el)
+    action := _DetermineAction(el)
+
+    ; Assemble FindFirst arguments: condition + matchMode + optional scope
+    mm := params.Has("matchMode") ? params["matchMode"] : "Exact"
+    sc := params.Has("scope") ? params["scope"] : ""
+    findArgs := condStr ', "' mm '"'
+    if (sc && sc != "Descendants")
+        findArgs .= ', UIA.TreeScope.' sc
+
+    ; Assemble the complete AHK v2 script
+    code := '#Requires AutoHotkey v2.0.2+`n'
+    code .= '#Include <UIA>`n'
+    code .= 'Main()`n'
+    code .= 'ExitApp`n'
+    code .= '`n'
+    code .= 'Main()`n'
+    code .= '{`n'
+    code .= '    local winEl := UIA.ElementFromHandle("' winTitle '")`n'
+    code .= '    local el := winEl.FindFirst(' findArgs ')`n'
+    code .= '    el.' action '`n'
+    code .= '}'
+
+    return Map("ahkCode", code)
+}
+
 ; ══════════════════════════════════════════════════════════════════
 ;  Full Element Result Builder (used by multiple handlers)
 ; ══════════════════════════════════════════════════════════════════
@@ -2434,6 +2495,7 @@ _HandleRequest(jsonStr)
         "uia_manage_window",        _HandleManageWindow,
         "uia_capture_screenshot",   _HandleCaptureScreenshot,
         "uia_get_code_recipe",      _HandleGetCodeRecipe,
+        "uia_get_element_code",     _HandleGetElementCode,
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )
 
