@@ -34,6 +34,43 @@ global PORT_FILE         := A_Temp "\UIA_MCP_Engine.port"
 global engineLog := Logger("UIAEngine", A_Temp "\UIA_MCP_Engine.log", Logger.LEVEL_INFO, false)
 ; debugOut=false because we write to file only (no OutputDebug in daemon context)
 
+; ── Unhandled Error Handler ────────────────────
+; AHK v2 shows a GUI error dialog for unhandled exceptions. As a
+; headless daemon, that dialog hangs the process indefinitely —
+; there's no user to click OK.  OnError lets us log the full error
+; to file and suppress the dialog so the engine can exit cleanly.
+; The daemon's health check will detect the exit and auto-restart.
+_OnUnhandledError(err, mode)
+{
+    global engineLog
+    ; Capture full error detail before any dialog can appear
+    try
+    {
+        errMsg := err.HasProp("Message") ? err.Message : String(err)
+        errWhat := err.HasProp("What") ? " (" err.What ")" : ""
+        errFile := err.HasProp("File") ? " in " err.File : ""
+        errLine := err.HasProp("Line") ? " line " err.Line : ""
+        stack  := err.HasProp("Stack") ? "`nStack: " err.Stack : ""
+        engineLog.Error("UNHANDLED ERROR (mode=" mode "): " errMsg errWhat errFile errLine stack)
+        ; Also write to a dedicated crash log so errors survive
+        ; engine restarts which may rotate the main log.
+        try FileAppend(FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+            . " UNHANDLED (mode=" mode "): " errMsg errWhat errFile errLine "`n" stack "`n`n"
+            , A_Temp "\UIA_MCP_Engine_crash.log")
+    }
+    catch
+    {
+        ; Last resort: write to a separate crash file
+        try FileAppend(FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+            . " UNHANDLED: " (err.HasProp("Message") ? err.Message : String(err))
+            . "`n", A_Temp "\UIA_MCP_Engine_crash.log")
+    }
+    ; Return non-zero to suppress the default error dialog.
+    ; The engine will exit; the daemon's health check will restart it.
+    return 1
+}
+OnError(_OnUnhandledError, 1)  ; mode 1 = catch all unhandled exceptions
+
 ; Parse command-line args
 for i, arg in A_Args
 {
@@ -2423,6 +2460,13 @@ _HandleRequest(jsonStr)
         result := handlers[method](params)
         elapsed := A_TickCount - tick
         engineLog.Debug("Completed: " method " (" elapsed "ms)")
+        ; ── Slow operation warning ──────────────────
+        ; Log a warning for operations exceeding 3s.
+        ; Long FindAll calls (especially Descendants scope on
+        ; large WinForms trees like BaseCamp) can indicate an
+        ; impending COM hang or a condition that needs narrowing.
+        if (elapsed > 3000)
+            engineLog.Info("SLOW: " method " took " elapsed "ms params=" paramsStr)
         return(_RpcResult(id, result))
     }
     catch as err
