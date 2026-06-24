@@ -1817,10 +1817,281 @@ _HandleElementExists(params)
 ; ══════════════════════════════════════════════════════════════════
 
 /**
+ * Walk the UIA tree from a starting element using a path string.
+ *
+ * Supported path formats:
+ *   "3,2"                       — comma-separated child indices (TreeWalkerTrue)
+ *   "/Name1/Name2"              — slash-separated named segments (FindFirst by Name)
+ *   "/0/1[@AutomationId='X']"  — numeric child indices with condition filter on last
+ *   "//*[@AutomationId='X']"   — descendant search using FindFirst with condition
+ *   "{Type:50010, Name:'foo'}" — condition object applied to starting element's descendants
+ *   "/"                         — return starting element itself
+ *
+ * @param {UIA.Element} startEl - element to start navigation from
+ * @param {String} path - path string to walk
+ * @returns {UIA.Element} The element at the resolved path
+ */
+_ElementFromPath(startEl, path)
+{
+    ; Empty path or root marker — return starting element
+    if (path = "" || path = "/")
+        return startEl
+
+    path := Trim(path)
+
+    ; ── Format 1: condition object string "{Type:50010, Name:'foo'}" ──
+    if (SubStr(path, 1, 1) = "{")
+    {
+        condObj := _ParseConditionString(path)
+        el := startEl.FindFirst(condObj, , UIA_TreeScope.Descendants)
+        if (!el)
+            throw Error("No descendant matching condition: " path)
+        return el
+    }
+
+    ; ── Format 2: descendant search "//*[@AutomationId='X']" ──
+    if (SubStr(path, 1, 2) = "//")
+    {
+        rest := SubStr(path, 3)
+        condObj := _ParseXPathCondition(rest)
+        el := (condObj = "")
+            ? startEl.FindFirst("", , UIA_TreeScope.Descendants)
+            : startEl.FindFirst(condObj, , UIA_TreeScope.Descendants)
+        if (!el)
+            throw Error("No descendant found: " path)
+        return el
+    }
+
+    ; ── Formats 3 & 4: slash-separated or comma-separated ──
+    ; Detect delimiter: comma-separated if no leading slash and contains commas
+    segments := []
+    if (SubStr(path, 1, 1) = "/")
+    {
+        ; Slash-separated: /Name1/Name2 or /0/1[@AutoId='X']
+        raw := SubStr(path, 2)  ; strip leading /
+        ; Split on / but not inside brackets
+        segments := _SplitPathSegments(raw)
+    }
+    else if (InStr(path, ","))
+    {
+        ; Comma-separated: 3,2,1
+        for part in StrSplit(path, ",")
+            segments.Push(Trim(part))
+    }
+    else
+    {
+        ; Single segment
+        segments.Push(path)
+    }
+
+    el := startEl
+    for seg in segments
+    {
+        seg := Trim(seg)
+        if (seg = "")
+            continue
+
+        ; Parse optional condition suffix: 0[@AutomationId='X']
+        idx := ""
+        condStr := ""
+        if (RegExMatch(seg, "^(\\d+)(\\[.+\\])?$", &m))
+        {
+            idx := Integer(m[1])
+            condStr := (m.Count >= 2 && m[2] != "") ? m[2] : ""
+        }
+        else if (RegExMatch(seg, "^([^\\[]+)(\\[.+\\])?$", &m))
+        {
+            ; Named segment: Name[@Condition]
+            name := m[1]
+            condStr := (m.Count >= 2 && m[2] != "") ? m[2] : ""
+
+            condObj := {Name: name}
+            if (condStr != "")
+            {
+                subObj := _ParseXPathCondition(condStr)
+                if (subObj != "")
+                {
+                    ; Merge sub-condition properties into condObj
+                    for k, v in (subObj is Object ? subObj.OwnProps() : [])
+                        condObj.%k% := v
+                }
+            }
+            child := el.FindFirst(condObj, , UIA_TreeScope.Children)
+            if (!child)
+                throw Error("Child not found: '" seg "' under " _ElName(el))
+            el := child
+            continue
+        }
+
+        ; Numeric index + optional condition
+        condObj := (condStr != "") ? _ParseXPathCondition(condStr) : ""
+
+        ; Get children matching condition, take the idx-th one
+        children := el.FindAll(condObj, , UIA_TreeScope.Children)
+        if (children.Length <= idx)
+            throw Error("Index " idx " out of range (found " children.Length " children) for: " seg)
+        el := children[idx + 1]  ; AHK arrays are 1-indexed
+    }
+
+    return el
+}
+
+/**
+ * Parse a condition string like "{Type:50010, AutomationId:'mMainMenuStrip'}".
+ * Returns a plain Object suitable for FindFirst/FindAll.
+ */
+_ParseConditionString(s)
+{
+    ; Strip outer braces
+    s := Trim(s)
+    if (SubStr(s, 1, 1) = "{")
+        s := SubStr(s, 2, -1)
+
+    condObj := {}
+    ; Split on commas not inside quotes
+    pos := 1
+    inQuote := false
+    start := 1
+    while (pos <= StrLen(s))
+    {
+        ch := SubStr(s, pos, 1)
+        if (ch = "'" || ch = '"')
+            inQuote := !inQuote
+        else if (!inQuote && ch = ",")
+        {
+            pair := Trim(SubStr(s, start, pos - start))
+            if (pair != "")
+                _AddConditionPairObj(condObj, pair)
+            start := pos + 1
+        }
+        pos++
+    }
+    ; Last pair
+    pair := Trim(SubStr(s, start))
+    if (pair != "")
+        _AddConditionPairObj(condObj, pair)
+
+    return condObj
+}
+
+_AddConditionPairObj(obj, pair)
+{
+    if (!RegExMatch(pair, "^\\s*(\\w+)\\s*:\\s*(.+)\\s*$", &m))
+        return
+
+    prop := m[1]
+    val := Trim(m[2])
+
+    ; Strip quotes from string values
+    if (SubStr(val, 1, 1) = "'" || SubStr(val, 1, 1) = '"')
+        val := SubStr(val, 2, -1)
+
+    ; Try numeric conversion for Type/ControlType/ProcessId
+    if (prop = "Type" || prop = "ControlType" || prop = "ProcessId")
+    {
+        try
+            val := Integer(val)
+    }
+
+    obj.%prop% := val
+}
+
+/**
+ * Parse an XPath-style condition like "[@AutomationId='SettingsButton']".
+ * Returns a plain Object suitable for FindFirst/FindAll, or "" if no condition.
+ */
+_ParseXPathCondition(s)
+{
+    s := Trim(s)
+
+    ; Strip leading "//*" if present
+    if (SubStr(s, 1, 3) = "//*")
+        s := SubStr(s, 4)
+
+    if (s = "" || s = "*")
+        return ""
+
+    ; Strip brackets: [@AutomationId='SettingsButton']
+    if (SubStr(s, 1, 1) = "[")
+        s := SubStr(s, 2)
+    if (SubStr(s, -1) = "]")
+        s := SubStr(s, 1, -1)
+
+    ; Remove @ prefix
+    if (SubStr(s, 1, 1) = "@")
+        s := SubStr(s, 2)
+
+    ; Split on = (prop='value' or prop="value")
+    if (!RegExMatch(s, "^\\s*(\\w+)\\s*=\\s*(.+)\\s*$", &m))
+        return ""
+
+    prop := m[1]
+    val := Trim(m[2])
+
+    ; Strip quotes
+    if (SubStr(val, 1, 1) = "'" || SubStr(val, 1, 1) = '"')
+        val := SubStr(val, 2, -1)
+
+    ; Try numeric conversion
+    if (prop = "Type" || prop = "ControlType" || prop = "ProcessId")
+    {
+        try
+            val := Integer(val)
+    }
+
+    condObj := {}
+    condObj.%prop% := val
+    return condObj
+}
+
+/**
+ * Split a path like "0/1[@AutoId='X']/2" into segments, respecting brackets.
+ */
+_SplitPathSegments(path)
+{
+    segments := []
+    current := ""
+    depth := 0
+    for i, ch in StrSplit(path)
+    {
+        if (ch = "[" || ch = "{")
+            depth++
+        else if (ch = "]" || ch = "}")
+            depth--
+
+        if (ch = "/" && depth = 0)
+        {
+            if (current != "")
+                segments.Push(current)
+            current := ""
+        }
+        else
+        {
+            current .= ch
+        }
+    }
+    if (current != "")
+        segments.Push(current)
+    return segments
+}
+
+/**
+ * Get a human-readable name for an element for error messages.
+ */
+_ElName(el)
+{
+    try return el.Name
+    catch
+        return "(unnamed)"
+}
+
+/**
  * uia_get_element_from_path — navigate the UIA tree using path syntax.
  *
  * Supports comma-separated numeric paths ("3,2" = third child's second child),
- * UIAViewer-encoded paths ("bAx3"), or condition arrays.
+ * slash-separated named paths ("/MenuBar/SettingsButton"),
+ * XPath-like conditions ("//*[@AutomationId='X']"),
+ * and condition object strings ("{Type:50010, Name:'foo'}").
  *
  * @param {Object} params - must include hwnd and path
  * @returns {Map} Full element result for the element at the path
@@ -1845,9 +2116,14 @@ _HandleGetElementFromPath(params)
     el := 0
     try
     {
-        ; The ElementFromPath method accepts string paths like "3,2",
-        ; UIAViewer-encoded paths like "bAx3", or condition arrays
-        el := windowEl.ElementFromPath(path)
+        ; Walk the UIA tree using the path syntax.
+        ; Supports:
+        ;   "3,2"            — comma-separated child indices
+        ;   "/Name1/Name2"    — slash-separated named segments (FindFirst by Name)
+        ;   "/0/1[@AutoId='X']" — numeric index then condition-filtered child
+        ;   "//*[@AutoId='X']" — descendant search with condition
+        ;   "{Type:50010,...}" — condition object (applied to windowEl's descendants)
+        el := _ElementFromPath(windowEl, path)
     }
     catch as err
         throw Error("ElementFromPath failed: " err.Message . " — path: " path)
@@ -2201,7 +2477,8 @@ _SaveBitmapToFile(hBitmap, filePath, width, height)
     NumPut("UInt", fileHeaderSize + biSize + bitsSize, fileHeader, 2)
     NumPut("UInt", fileHeaderSize + biSize, fileHeader, 10)
 
-    FileDelete(filePath)
+    if (FileExist(filePath))
+        FileDelete(filePath)
     f := FileOpen(filePath, "w")
     f.RawWrite(fileHeader, fileHeaderSize)
     f.RawWrite(bmi, biSize)
@@ -2551,8 +2828,11 @@ _DoShutdown(*)
 {
     engineLog.Info("Shutting down")
     FileDelete(PORT_FILE)
-    try DllCall("Ws2_32\WSACleanup")
-    ExitApp()
+    ; Use ExitProcess for a guaranteed immediate exit.
+    ; ExitApp can be silently suppressed if OnError returns non-zero
+    ; (e.g. after WSACleanup tears down socket state that ExitApp
+    ;  then tries to reference during its cleanup).
+    DllCall("kernel32\ExitProcess", "uint", 0)
 }
 
 ; ══════════════════════════════════════════════════════════════════
