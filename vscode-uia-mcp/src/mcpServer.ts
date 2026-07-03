@@ -217,16 +217,22 @@ export class UiaMcpServer {
      * Register via the VS Code MCP API using a stdio bridge.
      * VS Code spawns `node out/mcpBridge.js` which forwards MCP JSON-RPC
      * from stdin/stdout to our AHK engine over TCP.
+     *
+     * The daemon is started lazily in resolveMcpServerDefinition —
+     * only when the user enables the MCP server in VS Code's MCP panel.
      */
     register(context: vscode.ExtensionContext): void {
         this.output.appendLine("Registering UIA MCP server...");
 
         try {
-            const api = (vscode as any).lm;
-            if (!api || typeof api.registerMcpServerDefinitionProvider !== "function") {
-                this.output.appendLine(
-                    "lm.registerMcpServerDefinitionProvider not available — VS Code too old."
-                );
+            // The lm API and McpStdioServerDefinition are stable since VS Code 1.101+.
+            // We use (vscode as any).lm for backward compat with types that may not
+            // have the latest .d.ts declarations.
+            const lmApi = (vscode as any).lm;
+            if (!lmApi || typeof lmApi.registerMcpServerDefinitionProvider !== "function") {
+                const msg = "MCP API not available — please update VS Code to 1.101 or newer.";
+                this.output.appendLine(msg);
+                vscode.window.showWarningMessage(`UIA Inspector MCP: ${msg}`);
                 return;
             }
 
@@ -240,12 +246,11 @@ export class UiaMcpServer {
             this.output.appendLine(`MCP bridge node: ${nodeExe}`);
             this.output.appendLine(`MCP bridge script: ${bridgePath.fsPath}`);
 
-            // McpStdioServerDefinition may be on vscode or vscode.lm depending
-            // on VS Code version.  The constructor requires (label, command,
-            // args?, env?, version?) — NOT property assignment.
+            // McpStdioServerDefinition is stable on vscode since 1.101+.
+            // Falls back to vscode.lm for older type definitions.
             const McpDefClass: any =
                 (vscode as any).McpStdioServerDefinition ??
-                (vscode as any).lm?.McpStdioServerDefinition;
+                lmApi?.McpStdioServerDefinition;
 
             // Cache the definition — VS Code may call provideMcpServerDefinitions
             // multiple times.  Creating a new definition each time triggers
@@ -284,24 +289,33 @@ export class UiaMcpServer {
                     }
                     return [cachedDef];
                 },
-                resolveMcpServerDefinition: (server: any, _token: vscode.CancellationToken) => {
+                resolveMcpServerDefinition: async (server: any, _token: vscode.CancellationToken) => {
                     const ts = new Date().toISOString();
-                    this.debugChannel?.appendLine(`[${ts}] resolveMcpServerDefinition called — returning server as-is`);
+                    this.debugChannel?.appendLine(`[${ts}] resolveMcpServerDefinition called — ensuring daemon is running`);
+                    // Start the daemon on-demand when the MCP server is enabled.
+                    // If already running this is a no-op.
+                    try {
+                        await this.daemon.start();
+                        this.debugChannel?.appendLine(`[${ts}] Daemon ready (state=${this.daemon.getState()})`);
+                    } catch (err: any) {
+                        this.debugChannel?.appendLine(`[${ts}] Daemon start failed: ${err.message}`);
+                        this.output.appendLine(`MCP: daemon start failed — ${err.message}`);
+                    }
                     return server;
                 },
             };
 
             context.subscriptions.push(
-                api.registerMcpServerDefinitionProvider(SERVER_ID, provider)
+                lmApi.registerMcpServerDefinitionProvider(SERVER_ID, provider)
             );
 
             this.output.appendLine(
                 `MCP server "${SERVER_ID}" registered via stdio bridge.`
             );
         } catch (err: any) {
-            this.output.appendLine(
-                `MCP registration failed: ${err.message}`
-            );
+            const msg = `MCP registration failed: ${err.message}`;
+            this.output.appendLine(msg);
+            vscode.window.showErrorMessage(`UIA Inspector MCP: ${msg}`);
         }
     }
 

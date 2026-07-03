@@ -11,9 +11,8 @@
         "url": "https://github.com/jrg63/UIA_Inspector"
     },
     "engines": {
-        "vscode": "^1.90.0"
+        "vscode": "^1.101.0"
     },
-    "enabledApiProposals": ["lm"],
     "categories": [
         "Machine Learning",
         "Other"
@@ -23,12 +22,6 @@
     ],
     "main": "./out/extension.js",
     "contributes": {
-        "mcpServerDefinitionProviders": [
-            {
-                "id": "uia-inspector-mcp",
-                "label": "UIA Inspector"
-            }
-        ],
         "commands": [
             {
                 "command": "uia-mcp.startEngine",
@@ -72,7 +65,7 @@
                 "uia-mcp.autoLaunch": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Automatically start the AHK engine when VS Code opens."
+                    "description": "Pre-start the AHK engine when VS Code opens. When disabled, the engine starts on-demand when the MCP server is enabled in the MCP panel."
                 },
                 "uia-mcp.engineIdleTimeout": {
                     "type": "number",
@@ -104,7 +97,7 @@
     "devDependencies": {
         "@types/jest": "^30.0.0",
         "@types/node": "^20.0.0",
-        "@types/vscode": "^1.90.0",
+        "@types/vscode": "^1.101.0",
         "esbuild": "^0.24.0",
         "jest": "^30.4.2",
         "ts-jest": "^29.4.11",
