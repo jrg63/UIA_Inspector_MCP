@@ -2,7 +2,7 @@
     "name": "vscode-uia-mcp",
     "displayName": "UIA Inspector MCP",
     "description": "MCP server for Windows UI Automation inspection — lets LLMs interrogate desktop UIs and generate AHK v2 automation code",
-    "version": "0.1.0",
+    "version": "2.0.0",
     "publisher": "jrg63",
     "license": "MIT",
     "icon": "icon.png",

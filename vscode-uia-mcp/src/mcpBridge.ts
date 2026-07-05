@@ -74,6 +74,9 @@ const TOOLS = [
     { name: "uia_manage_window", description: "Activate, minimize, maximize, restore, close, move, or resize a window.", inputSchema: { type: "object", properties: { hwnd: { type: "string" }, action: { type: "string", enum: ["Activate","Minimize","Maximize","Restore","Close","Move","Resize"] }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["hwnd", "action"] } },
     { name: "uia_capture_screenshot", description: "Capture a screenshot of a window.", inputSchema: { type: "object", properties: { hwnd: { type: "string" }, filePath: { type: "string" } }, required: ["hwnd"] } },
     { name: "uia_get_code_recipe", description: "Get AHK v2 code templates for common scenarios.", inputSchema: { type: "object", properties: { recipe: { type: "string" } }, required: ["recipe"] } },
+    { name: "uia_detect_framework", description: "Detect the UI framework of a window (WPF, WinForms, Chrome/Electron, Java Swing, Qt, UWP, Delphi, VB6, MFC, or Win32).", inputSchema: { type: "object", properties: { hwnd: { type: "string" } }, required: ["hwnd"] } },
+    { name: "uia_get_pixel_color", description: "Get the pixel color at screen coordinates. Returns RGB and hex.", inputSchema: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"] } },
+    { name: "uia_get_accessibility_warnings", description: "Analyze a window for UIA automation pitfalls and return warnings (custom-rendered UI, elevation mismatches, legacy frameworks, etc.).", inputSchema: { type: "object", properties: { hwnd: { type: "string" } }, required: ["hwnd"] } },
 ];
 
 function isTransient(err: Error): boolean {

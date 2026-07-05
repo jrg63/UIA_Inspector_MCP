@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Integration test harness for UIA_MCP_Engine.ahk
 .DESCRIPTION
@@ -200,7 +200,7 @@ function Test-Sanity {
     $r = Send-JsonRpc -Method "ping"
     Assert-Result $r "ping returns 'pong'" { $args[0] -eq "pong" }
 
-    # parse error — send invalid JSON
+    # parse error -- send invalid JSON
     $tcp = New-Object System.Net.Sockets.TcpClient
     $tcp.Connect("127.0.0.1", $Port)
     $stream = $tcp.GetStream()
@@ -215,7 +215,7 @@ function Test-Sanity {
         return $parsed.error -ne $null -and $parsed.error.code -eq -32700
     }
     if (-not $parsed.error) {
-        Write-Host "    (skipping parse error check — engine returned result)" -ForegroundColor Yellow
+        Write-Host "    (skipping parse error check -- engine returned result)" -ForegroundColor Yellow
         $script:passed++
     }
 
@@ -223,7 +223,7 @@ function Test-Sanity {
     $r = Send-JsonRpc -Method "nonexistent_method"
     Assert-Error $r "nonexistent_method returns -32601" -expectedCode -32601
 
-    # shutdown — don't actually test this first, save for end
+    # shutdown -- don't actually test this first, save for end
 }
 
 function Test-Windows {
@@ -245,7 +245,7 @@ function Test-Windows {
         Assert-Result @{result=$w} "first window has exe"   { $null -ne $args[0].exe }
         Assert-Result @{result=$w} "first window has pid"   { $null -ne $args[0].pid }
 
-        # Save a useful window for later tests — prefer Program Manager (desktop)
+        # Save a useful window for later tests -- prefer Program Manager (desktop)
         foreach ($win in $r.result.windows) {
             if ($win.title -match "Program Manager") {
                 $script:testHwnd = $win.hwnd
@@ -289,7 +289,7 @@ function Test-Windows {
     }
     else {
         Write-Warn
-        Write-Host "    No visible window found — skipping get_window_info tests" -ForegroundColor Yellow
+        Write-Host "    No visible window found -- skipping get_window_info tests" -ForegroundColor Yellow
         $script:warned++
     }
 }
@@ -299,14 +299,14 @@ function Test-Find {
 
     if (-not $script:testHwnd) {
         Write-Warn
-        Write-Host "    No test window — skipping find tests" -ForegroundColor Yellow
+        Write-Host "    No test window -- skipping find tests" -ForegroundColor Yellow
         $script:warned++
         return
     }
 
     $hwnd = $script:testHwnd
 
-    # check_match_count — find all Pane elements (always present)
+    # check_match_count -- find all Pane elements (always present)
     $r = Send-JsonRpc -Method "check_match_count" -Params @{
         condition = @{Type = "Pane"}
         hwnd = $hwnd
@@ -316,7 +316,7 @@ function Test-Find {
         return $null -ne $args[0].count -and $args[0].count -ge 0
     }
 
-    # find_all_elements — find all elements of type Pane
+    # find_all_elements -- find all elements of type Pane
     $r = Send-JsonRpc -Method "find_all_elements" -Params @{
         condition = @{Type = "Pane"}
         hwnd = $hwnd
@@ -400,7 +400,7 @@ function Test-Tree {
 
     if (-not $script:testHwnd) {
         Write-Warn
-        Write-Host "    No test window — skipping tree tests" -ForegroundColor Yellow
+        Write-Host "    No test window -- skipping tree tests" -ForegroundColor Yellow
         $script:warned++
         return
     }
@@ -458,7 +458,7 @@ function Test-Cursor {
     $r = Send-JsonRpc -Method "inspect_at_cursor"
     if ($r.result -and $r.result.elevated) {
         Write-Warn
-        Write-Host "    Target is elevated — engine needs admin rights" -ForegroundColor Yellow
+        Write-Host "    Target is elevated -- engine needs admin rights" -ForegroundColor Yellow
         Write-Host "    Target: $($r.result.targetName) (PID $($r.result.targetPid))" -ForegroundColor DarkGray
         $script:warned++
         return
@@ -483,12 +483,12 @@ function Test-Wait {
 
     if (-not $script:testHwnd) {
         Write-Warn
-        Write-Host "    No test window — skipping wait tests" -ForegroundColor Yellow
+        Write-Host "    No test window -- skipping wait tests" -ForegroundColor Yellow
         $script:warned++
         return
     }
 
-    # wait_for_element — find element by Name (always present in desktop)
+    # wait_for_element -- find element by Name (always present in desktop)
     $r = Send-JsonRpc -Method "wait_for_element" -Params @{
         condition = @{Name = "Desktop"}
         hwnd = $script:testHwnd
@@ -549,7 +549,7 @@ function Test-Elevation {
         }
     }
     else {
-        Write-Host "    Task Manager not found — skipping elevation test" -ForegroundColor DarkGray
+        Write-Host "    Task Manager not found -- skipping elevation test" -ForegroundColor DarkGray
     }
 }
 
@@ -590,7 +590,7 @@ function Test-Actions {
     $r = Send-JsonRpc -Method "uia_highlight_element" -Params @{duration = 100}
     Assert-NoError $r "highlight_element succeeds"
 
-    # Element exists — should find something at the focused element
+    # Element exists -- should find something at the focused element
     $r = Send-JsonRpc -Method "uia_element_exists" -Params @{condition = @{Type = "Window"}}
     Assert-NoError $r "element_exists with Window type"
     if ($r.result -and $r.result.exists) {
@@ -627,7 +627,7 @@ function Test-Discovery {
         Write-Host "    Dump length: $($r.result.dump.Length) chars" -ForegroundColor DarkGray
     }
 
-    # Wait element not exist — with impossible condition, should resolve quickly
+    # Wait element not exist -- with impossible condition, should resolve quickly
     $r = Send-JsonRpc -Method "uia_wait_element_not_exist" -Params @{
         condition = @{Type = "NoSuchType_XYZ"}
         timeout = 500
@@ -636,7 +636,7 @@ function Test-Discovery {
         return ($args[0].gone -eq $true)
     }
 
-    # Element from path — needs a real window
+    # Element from path -- needs a real window
     $win = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
     if ($win.result.windows.Count -gt 0) {
         $hwnd = $win.result.windows[0].hwnd
@@ -651,7 +651,7 @@ function Test-Discovery {
         $script:warned++
     }
 
-    # Element from chromium — should fail gracefully on non-browser
+    # Element from chromium -- should fail gracefully on non-browser
     if ($win.result.windows.Count -gt 0) {
         $hwnd = $win.result.windows[0].hwnd
         $r = Send-JsonRpc -Method "uia_element_from_chromium" -Params @{hwnd = $hwnd}
@@ -672,19 +672,19 @@ function Test-Utility {
         Write-Host "    ToggleState: $($r.result.ToggleState | ConvertTo-Json -Compress)" -ForegroundColor DarkGray
     }
 
-    # Code recipe — list
+    # Code recipe -- list
     $r = Send-JsonRpc -Method "uia_get_code_recipe" -Params @{recipe = "list_recipes"}
     Assert-Result $r "recipe list returns recipes" {
         return ($null -ne $args[0].recipes)
     }
 
-    # Code recipe — specific
+    # Code recipe -- specific
     $r = Send-JsonRpc -Method "uia_get_code_recipe" -Params @{recipe = "find_and_click"}
     Assert-Result $r "find_and_click recipe has ahkCode" {
         return ($args[0].ahkCode -match 'WaitElement')
     }
 
-    # Get element code — generate a runnable script for a specific element
+    # Get element code -- generate a runnable script for a specific element
     if ($win.result.windows.Count -gt 0) {
         $hwnd = $win.result.windows[0].hwnd
         $r = Send-JsonRpc -Method "uia_get_element_code" -Params @{hwnd = $hwnd; condition = @{Type = "Window"}}
@@ -717,7 +717,7 @@ function Test-Utility {
         $script:warned++
     }
 
-    # Window management — Activate requires real HWND
+    # Window management -- Activate requires real HWND
     $win = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
     if ($win.result.windows.Count -gt 0) {
         $hwnd = $win.result.windows[0].hwnd
@@ -730,9 +730,95 @@ function Test-Utility {
         $script:warned++
     }
 
-    # Window management — missing action should error
+    # Window management -- missing action should error
     $r = Send-JsonRpc -Method "uia_manage_window" -Params @{hwnd = "0x12345"}
     Assert-Error $r "manage_window without action errors"
+}
+
+function Test-Framework {
+    Write-Info "=== Framework & Accessibility Tests ==="
+
+    # Get a real window for testing
+    $wins = Send-JsonRpc -Method "list_windows" -Params @{filter = "Program Manager"}
+    if ($wins.result.windows.Count -eq 0) {
+        Write-Warn
+        Write-Host "    No windows available for framework tests" -ForegroundColor Yellow
+        $script:warned++
+        return
+    }
+    $hwnd = $wins.result.windows[0].hwnd
+    Write-Host "    Using window: $hwnd" -ForegroundColor DarkGray
+
+    # ── uia_detect_framework ──
+    $r = Send-JsonRpc -Method "uia_detect_framework" -Params @{hwnd = $hwnd}
+    Assert-Result $r "detect_framework returns framework" {
+        return ($null -ne $args[0].framework)
+    }
+    Assert-Result $r "detect_framework returns confidence" {
+        return ($null -ne $args[0].confidence)
+    }
+    Assert-Result $r "detect_framework returns clues array" {
+        return ($args[0].clues -is [array])
+    }
+    if ($r.result) {
+        Write-Host "    Framework: $($r.result.framework) (confidence: $($r.result.confidence))" -ForegroundColor DarkGray
+        Write-Host "    Class: $($r.result.class)  Exe: $($r.result.exe)" -ForegroundColor DarkGray
+    }
+
+    # detect_framework without hwnd should error
+    $r = Send-JsonRpc -Method "uia_detect_framework" -Params @{}
+    Assert-Error $r "detect_framework without hwnd errors"
+
+    # ── uia_get_pixel_color ──
+    $r = Send-JsonRpc -Method "uia_get_pixel_color" -Params @{x = 0; y = 0}
+    Assert-Result $r "get_pixel_color returns hex" {
+        return ($args[0].hex -match '^#[0-9A-Fa-f]{6}$')
+    }
+    Assert-Result $r "get_pixel_color returns rgb array" {
+        $rgb = $args[0].rgb
+        return ($rgb -is [array] -and $rgb.Count -eq 3)
+    }
+    if ($r.result) {
+        Write-Host "    Pixel (0,0): $($r.result.hex) RGB($($r.result.rgb -join ','))" -ForegroundColor DarkGray
+    }
+
+    # get_pixel_color without coordinates should error
+    $r = Send-JsonRpc -Method "uia_get_pixel_color" -Params @{}
+    Assert-Error $r "get_pixel_color without x/y errors"
+
+    # ── uia_get_accessibility_warnings ──
+    $r = Send-JsonRpc -Method "uia_get_accessibility_warnings" -Params @{hwnd = $hwnd}
+    Assert-Result $r "get_accessibility_warnings returns warningCount" {
+        return ($null -ne $args[0].warningCount)
+    }
+    Assert-Result $r "get_accessibility_warnings returns warnings array" {
+        return ($args[0].warnings -is [array])
+    }
+    Assert-Result $r "get_accessibility_warnings returns class" {
+        return ($null -ne $args[0].class)
+    }
+    if ($r.result) {
+        Write-Host "    Warnings: $($r.result.warningCount)" -ForegroundColor DarkGray
+        foreach ($w in $r.result.warnings) {
+            Write-Host "      [$($w.severity)] $($w.message)" -ForegroundColor DarkGray
+        }
+    }
+
+    # accessibility_warnings without hwnd should error
+    $r = Send-JsonRpc -Method "uia_get_accessibility_warnings" -Params @{}
+    Assert-Error $r "get_accessibility_warnings without hwnd errors"
+
+    # ── get_window_info now includes framework ──
+    $r = Send-JsonRpc -Method "get_window_info" -Params @{hwnd = $hwnd}
+    Assert-Result $r "get_window_info includes framework field" {
+        return ($null -ne $args[0].framework)
+    }
+    Assert-Result $r "get_window_info includes frameworkConfidence field" {
+        return ($null -ne $args[0].frameworkConfidence)
+    }
+    if ($r.result) {
+        Write-Host "    Window framework: $($r.result.framework) ($($r.result.frameworkConfidence))" -ForegroundColor DarkGray
+    }
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -808,6 +894,7 @@ try {
     Test-Actions
     Test-Discovery
     Test-Utility
+    Test-Framework
 }
 catch {
     Write-Host "Test suite threw: $_" -ForegroundColor Red

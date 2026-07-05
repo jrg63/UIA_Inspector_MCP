@@ -1218,6 +1218,9 @@ _HandleGetWindowInfo(params)
         bitness := _CheckExeBitness(path)
         elevated := _IsElevated(pid)
 
+        ; Framework detection (lightweight, inlined)
+        fw := _QuickDetectFramework(hwnd, class, pid, exe)
+
         return {
             hwnd: Format("0x{:X}", hwnd),
             title: title,
@@ -1229,7 +1232,9 @@ _HandleGetWindowInfo(params)
             minMax: minMax,   ; -1=minimized, 0=normal, 1=maximized
             bitness: bitness,
             elevated: elevated,
-            isBrowser: _IsBrowserProcess(pid)
+            isBrowser: _IsBrowserProcess(pid),
+            framework: fw.framework,
+            frameworkConfidence: fw.confidence
         }
     }
     catch as err
@@ -2773,6 +2778,9 @@ _HandleRequest(jsonStr)
         "uia_capture_screenshot",   _HandleCaptureScreenshot,
         "uia_get_code_recipe",      _HandleGetCodeRecipe,
         "uia_get_element_code",     _HandleGetElementCode,
+        "uia_detect_framework",     _HandleDetectFramework,
+        "uia_get_pixel_color",      _HandleGetPixelColor,
+        "uia_get_accessibility_warnings", _HandleGetAccessibilityWarnings,
         "shutdown",             (*) => (SetTimer(_DoShutdown, -1), "shutting down")
     )
 
@@ -2833,6 +2841,419 @@ _DoShutdown(*)
     ; (e.g. after WSACleanup tears down socket state that ExitApp
     ;  then tries to reference during its cleanup).
     DllCall("kernel32\ExitProcess", "uint", 0)
+}
+
+; ══════════════════════════════════════════════════════════════════
+;  Framework Detection
+; ══════════════════════════════════════════════════════════════════
+
+/**
+ * Quick inlined framework detection (used by get_window_info).
+ * Returns {framework, confidence} without the full clue list.
+ */
+_QuickDetectFramework(hwnd, class, pid, exe)
+{
+    exeLower := StrLower(exe)
+
+    if (InStr(class, "HwndWrapper"))
+        return {framework: "WPF", confidence: "high"}
+    if (InStr(class, "ThunderRT6"))
+        return {framework: "VB6", confidence: "high"}
+    if (InStr(class, "SunAwt"))
+        return {framework: "Java Swing", confidence: "high"}
+    if (InStr(class, "Afx:"))
+        return {framework: "MFC", confidence: "high"}
+    if (InStr(class, "Qt5") || InStr(class, "Qt6"))
+        return {framework: "Qt", confidence: "high"}
+    if (InStr(class, "ApplicationFrame"))
+        return {framework: "UWP", confidence: "medium"}
+    if (InStr(class, "TForm") || InStr(class, "TButton") || InStr(class, "TEdit"))
+        return {framework: "Delphi", confidence: "medium"}
+
+    ; Chromium detection
+    try {
+        controls := WinGetControls(hwnd)
+        for _, ctrl in controls {
+            if (InStr(ctrl, "Chrome_RenderWidgetHostHWND")) {
+                if (InStr(exeLower, "chrome") && !InStr(exeLower, "electron") && !InStr(exeLower, "code"))
+                    return {framework: "Chrome", confidence: "high"}
+                if (InStr(exeLower, "msedge"))
+                    return {framework: "Edge", confidence: "high"}
+                return {framework: "Electron", confidence: "medium"}
+            }
+            if (InStr(ctrl, "WindowsForms10"))
+                return {framework: "WinForms", confidence: "high"}
+        }
+    }
+
+    ; Fallback: UIA FrameworkId
+    try {
+        el := UIA.ElementFromHandle(hwnd)
+        fwId := el.GetPropertyValue(30024)
+        if (fwId && fwId != "")
+            return {framework: String(fwId), confidence: "medium"}
+    }
+
+    return {framework: "Win32", confidence: "low"}
+}
+
+/**
+ * uia_detect_framework — identify the UI framework of a window.
+ *
+ * Detects: WPF, WinForms, Chrome/Electron, Java Swing, Qt, UWP,
+ * Delphi, VB6, MFC, and legacy Win32.
+ */
+_HandleDetectFramework(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
+        throw Error("hwnd is required")
+
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+
+    class := ""
+    title := ""
+    exe := ""
+    pid := 0
+    try class := WinGetClass(hwnd)
+    try title := WinGetTitle(hwnd)
+    try pid := WinGetPID(hwnd)
+    try exe := ProcessGetName(pid)
+    exeLower := StrLower(exe)
+
+    ; Gather clues
+    clues := []
+    framework := "unknown"
+    confidence := "low"
+
+    ; ── WPF ──
+    if (InStr(class, "HwndWrapper")) {
+        framework := "WPF"
+        confidence := "high"
+        clues.Push("Window class contains HwndWrapper (WPF hosting window)")
+    }
+
+    ; ── Windows Forms ──
+    if (framework = "unknown") {
+        try {
+            controls := WinGetControls(hwnd)
+            for _, ctrl in controls {
+                if (InStr(ctrl, "WindowsForms10")) {
+                    framework := "WinForms"
+                    confidence := "high"
+                    clues.Push("Found WindowsForms10 control class")
+                    break
+                }
+            }
+        }
+    }
+
+    ; ── Chrome / Electron (Chromium) ──
+    if (framework = "unknown") {
+        isChromium := false
+        try {
+            controls := WinGetControls(hwnd)
+            for _, ctrl in controls {
+                if (InStr(ctrl, "Chrome_RenderWidgetHostHWND")) {
+                    isChromium := true
+                    break
+                }
+            }
+        }
+        if (isChromium) {
+            ; Distinguish Electron apps from plain Chrome
+            if (InStr(exeLower, "chrome") && !InStr(exeLower, "electron") && !InStr(exeLower, "code")) {
+                framework := "Chrome"
+                confidence := "high"
+                clues.Push("Chrome_RenderWidgetHostHWND control found, chrome.exe process")
+            }
+            else if (InStr(exeLower, "msedge")) {
+                framework := "Edge"
+                confidence := "high"
+                clues.Push("Chrome_RenderWidgetHostHWND control found, msedge.exe process")
+            }
+            else {
+                framework := "Electron"
+                confidence := "medium"
+                clues.Push("Chrome_RenderWidgetHostHWND control found in non-browser process: " exe)
+            }
+        }
+    }
+
+    ; ── Java Swing ──
+    if (framework = "unknown" && InStr(class, "SunAwt")) {
+        framework := "Java Swing"
+        confidence := "high"
+        clues.Push("Window class contains SunAwt (Java AWT/Swing)")
+    }
+
+    ; ── Qt ──
+    if (framework = "unknown" && (InStr(class, "Qt5") || InStr(class, "Qt6"))) {
+        framework := "Qt"
+        confidence := "high"
+        clues.Push("Window class contains Qt5/Qt6")
+    }
+
+    ; ── UWP / Modern Windows ──
+    if (framework = "unknown" && InStr(class, "ApplicationFrame")) {
+        framework := "UWP"
+        confidence := "medium"
+        clues.Push("Window class is ApplicationFrameWindow (UWP host)")
+    }
+
+    ; ── Delphi ──
+    if (framework = "unknown" && (InStr(class, "TForm") || InStr(class, "TButton") || InStr(class, "TEdit"))) {
+        framework := "Delphi"
+        confidence := "medium"
+        clues.Push("Window class prefix 'T' suggests Delphi/VCL")
+    }
+
+    ; ── VB6 ──
+    if (framework = "unknown" && InStr(class, "ThunderRT6")) {
+        framework := "VB6"
+        confidence := "high"
+        clues.Push("Window class ThunderRT6 (VB6 runtime)")
+    }
+
+    ; ── MFC ──
+    if (framework = "unknown" && InStr(class, "Afx:")) {
+        framework := "MFC"
+        confidence := "high"
+        clues.Push("Window class Afx: prefix (MFC framework)")
+    }
+
+    ; ── Fallback: use UIA FrameworkId ──
+    if (framework = "unknown") {
+        try {
+            el := UIA.ElementFromHandle(hwnd)
+            fwId := el.GetPropertyValue(30024)
+            if (fwId && fwId != "") {
+                fwIdStr := String(fwId)
+                if (InStr(fwIdStr, "WPF")) {
+                    framework := "WPF"
+                    confidence := "medium"
+                    clues.Push("UIA FrameworkId: " fwIdStr)
+                } else {
+                    framework := fwIdStr
+                    confidence := "medium"
+                    clues.Push("UIA FrameworkId: " fwIdStr)
+                }
+            }
+        } catch {
+            clues.Push("UIA element resolution failed — cannot determine FrameworkId")
+        }
+    }
+
+    ; ── Additional clues ──
+    if (exeLower) {
+        if (InStr(exeLower, "code") || InStr(exeLower, "code-insiders"))
+            clues.Push("Process is VS Code (Electron-based)")
+        if (InStr(exeLower, "signal"))
+            clues.Push("Process is Signal (Electron-based)")
+        if (InStr(exeLower, "discord"))
+            clues.Push("Process is Discord (Electron-based)")
+        if (InStr(exeLower, "notepad"))
+            clues.Push("Process is Notepad (Win32)")
+        if (InStr(exeLower, "javaw") || InStr(exeLower, "java"))
+            clues.Push("Process is java/javaw (likely Java Swing or JavaFX)")
+    }
+
+    ; Count controls for heuristics
+    try {
+        controls := WinGetControls(hwnd)
+        if (controls.Length < 5)
+            clues.Push("Window has very few Win32 controls — may be custom-rendered or UIA-only")
+    }
+
+    return {
+        framework: framework,
+        confidence: confidence,
+        clues: clues,
+        class: class,
+        exe: exe
+    }
+}
+
+; ══════════════════════════════════════════════════════════════════
+;  Pixel Color
+; ══════════════════════════════════════════════════════════════════
+
+/**
+ * uia_get_pixel_color — get the pixel color at screen coordinates.
+ */
+_HandleGetPixelColor(params)
+{
+    if (!params.Has("x") || !params.Has("y"))
+        throw Error("x and y are required")
+
+    x := params["x"]
+    y := params["y"]
+    if (x is String)
+        x := Integer(x)
+    if (y is String)
+        y := Integer(y)
+
+    CoordMode("Pixel", "Screen")
+    try {
+        color := PixelGetColor(x, y)
+        r := (color >> 16) & 0xFF
+        g := (color >> 8) & 0xFF
+        b := color & 0xFF
+        hex := Format("#{:06X}", color)
+        return {
+            x: x,
+            y: y,
+            color: color,
+            hex: hex,
+            rgb: [r, g, b]
+        }
+    } catch as err {
+        throw Error("Failed to get pixel color: " err.Message)
+    }
+}
+
+; ══════════════════════════════════════════════════════════════════
+;  Accessibility Warnings
+; ══════════════════════════════════════════════════════════════════
+
+/**
+ * uia_get_accessibility_warnings — report potential automation pitfalls.
+ */
+_HandleGetAccessibilityWarnings(params)
+{
+    if (!params.Has("hwnd") || !params["hwnd"])
+        throw Error("hwnd is required")
+
+    hwnd := params["hwnd"]
+    if (hwnd is String)
+        hwnd := Integer(hwnd)
+
+    warnings := []
+    class := ""
+    title := ""
+    pid := 0
+    exe := ""
+    try class := WinGetClass(hwnd)
+    try title := WinGetTitle(hwnd)
+    try pid := WinGetPID(hwnd)
+    try exe := ProcessGetName(pid)
+
+    ; ── Chromium content detection ──
+    isChromium := false
+    try {
+        controls := WinGetControls(hwnd)
+        for _, ctrl in controls {
+            if (InStr(ctrl, "Chrome_RenderWidgetHostHWND")) {
+                isChromium := true
+                break
+            }
+        }
+    }
+    if (isChromium) {
+        warnings.Push(Map(
+            "severity", "info",
+            "message", "Chromium-based rendering detected. Standard UIA may only see the top-level document. Use `uia_element_from_chromium` to access page content."
+        ))
+    }
+
+    ; ── WPF ──
+    if (InStr(class, "HwndWrapper")) {
+        warnings.Push(Map(
+            "severity", "info",
+            "message", "WPF application detected. UIA is well-supported. Prefer AutomationId over Name for stable element identification."
+        ))
+    }
+
+    ; ── WinForms ──
+    try {
+        controls := WinGetControls(hwnd)
+        hasWinForms := false
+        for _, ctrl in controls {
+            if (InStr(ctrl, "WindowsForms10")) {
+                hasWinForms := true
+                break
+            }
+        }
+        if (hasWinForms) {
+            warnings.Push(Map(
+                "severity", "warning",
+                "message", "Windows Forms detected. UIA can be slow on large WinForms trees. Use narrow scopes and specific conditions. FindAll on Descendants scope may time out."
+            ))
+        }
+    }
+
+    ; ── VB6 / Legacy IAccessible ──
+    if (InStr(class, "ThunderRT6")) {
+        warnings.Push(Map(
+            "severity", "warning",
+            "message", "VB6 application detected. UIA bridge is LegacyIAccessible — properties may be limited. CacheRequest combined with FindAll may fail. Use Element scope and single-element lookups."
+        ))
+    }
+
+    ; ── Java ──
+    if (InStr(class, "SunAwt")) {
+        warnings.Push(Map(
+            "severity", "info",
+            "message", "Java Swing application detected. UIA support varies by Java version. JavaFX apps have better UIA support than Swing."
+        ))
+    }
+
+    ; ── Custom rendering hint ──
+    try {
+        controls := WinGetControls(hwnd)
+        try {
+            winText := WinGetText(hwnd)
+            if (controls.Length < 5 && winText != "") {
+                warnings.Push(Map(
+                    "severity", "warning",
+                    "message", "Window has very few Win32 controls (" controls.Length ") but has window text — suggests custom rendering. UIA may see limited elements. Consider screenshot-based approaches as fallback."
+                ))
+            }
+        }
+    }
+
+    ; ── Elevated process ──
+    try {
+        targetPid := WinGetPID(hwnd)
+        if (_IsElevated(targetPid) && !A_IsAdmin) {
+            warnings.Push(Map(
+                "severity", "error",
+                "message", "Target process is elevated but engine is not running as Administrator. UIA access will be denied. Restart VS Code as Administrator."
+            ))
+        }
+    }
+
+    ; ── Browser ──
+    if (_IsBrowserProcess(pid)) {
+        warnings.Push(Map(
+            "severity", "info",
+            "message", "Browser process detected. Use `uia_element_from_chromium` for page content. Standard FindFirst on browser window only sees the toolbar/UI chrome."
+        ))
+    }
+
+    ; ── UWP ──
+    if (InStr(class, "ApplicationFrame")) {
+        warnings.Push(Map(
+            "severity", "info",
+            "message", "UWP application detected. The visible window (ApplicationFrameWindow) is a host — use `get_element_tree` to find the actual content window underneath."
+        ))
+    }
+
+    if (warnings.Length = 0) {
+        warnings.Push(Map(
+            "severity", "info",
+            "message", "No specific accessibility concerns detected for this window."
+        ))
+    }
+
+    return {
+        hwnd: Format("0x{:X}", hwnd),
+        class: class,
+        exe: exe,
+        warningCount: warnings.Length,
+        warnings: warnings
+    }
 }
 
 ; ══════════════════════════════════════════════════════════════════

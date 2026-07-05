@@ -32,6 +32,9 @@ export const TOOL_NAMES = [
     "uia_capture_screenshot",
     "uia_get_code_recipe",
     "uia_get_element_code",
+    "uia_detect_framework",
+    "uia_get_pixel_color",
+    "uia_get_accessibility_warnings",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -640,6 +643,55 @@ export function buildToolDefinitions(): ToolDefinition[] {
                     },
                 },
                 required: ["condition"],
+            },
+        },
+        {
+            name: "uia_detect_framework",
+            description:
+                "Detect the UI framework of a window (WPF, WinForms, Chrome/Electron, Java Swing, Qt, UWP, Delphi, VB6, MFC, or Win32). Returns the framework name, confidence level, and detection clues. Use this before generating automation code to choose the right strategy — Chromium-based apps need different handling than WinForms or WPF.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    hwnd: {
+                        type: "string",
+                        description: "Hex HWND of the window to analyze.",
+                    },
+                },
+                required: ["hwnd"],
+            },
+        },
+        {
+            name: "uia_get_pixel_color",
+            description:
+                "Get the color of a pixel at specific screen coordinates. Returns RGB values and hex color code. Use this to verify UI state visually — e.g., check if a button is highlighted, a status indicator changed color, or an element is visible on screen.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    x: {
+                        type: "number",
+                        description: "Screen X coordinate.",
+                    },
+                    y: {
+                        type: "number",
+                        description: "Screen Y coordinate.",
+                    },
+                },
+                required: ["x", "y"],
+            },
+        },
+        {
+            name: "uia_get_accessibility_warnings",
+            description:
+                "Analyze a window for potential UIA automation pitfalls and return a list of warnings. Detects custom-rendered UIs, Chromium content, legacy VB6/Delphi apps, elevation mismatches, and frameworks with limited UIA support. Use this before automating an unfamiliar window to know what to watch out for.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    hwnd: {
+                        type: "string",
+                        description: "Hex HWND of the window to analyze.",
+                    },
+                },
+                required: ["hwnd"],
             },
         },
     ];
