@@ -115,7 +115,7 @@ install: package
 
 install-dev: build
 	@echo "==> Installing extension in dev mode..."
-	cmd.exe /c "code --install-extension $$(wslpath -w $(CURDIR)/$(VSIX_NAME)) --force 2>nul"
+	cmd.exe /c "code --install-extension $$(wslpath -w $(CURDIR)/$(VSIX_NAME)) --force 2>/dev/null"
 	@echo "==> Dev install complete."
 
 # ── Test ──────────────────────────────────────────────────────────
