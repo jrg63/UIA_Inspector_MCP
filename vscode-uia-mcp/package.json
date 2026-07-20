@@ -64,7 +64,7 @@
                 },
                 "uia-mcp.autoLaunch": {
                     "type": "boolean",
-                    "default": true,
+                    "default": false,
                     "description": "Pre-start the AHK engine when VS Code opens. When disabled, the engine starts on-demand when the MCP server is enabled in the MCP panel."
                 },
                 "uia-mcp.engineIdleTimeout": {

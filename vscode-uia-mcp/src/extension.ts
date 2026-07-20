@@ -83,7 +83,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Start the daemon eagerly so the bridge spawned by VS Code (from
     // mcp.json) can connect immediately.  The engine has its own idle
     // timeout so it won't waste resources when unused.
-    if (config.get<boolean>("autoLaunch", true)) {
+    if (config.get<boolean>("autoLaunch", false)) {
         daemon.start();
     }
 
