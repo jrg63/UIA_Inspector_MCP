@@ -751,7 +751,7 @@ Test_ElementSummary()
             Assert(summary.IsEnabled = true || summary.IsEnabled = false, "IsEnabled is boolean")
         }
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
@@ -774,7 +774,7 @@ Test_ElementToMap()
             Assert(m.Has("FrameworkId"), "has FrameworkId")
         }
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
@@ -795,7 +795,7 @@ Test_BuildConditionString()
             Assert(InStr(cs, "Type:"), "contains Type:")
         }
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
@@ -815,7 +815,7 @@ Test_GetPatterns()
                 Assert(p.Has("name"), "pattern has name: " p.name)
         }
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
@@ -835,7 +835,7 @@ Test_GetAncestorChain()
             _Log("    Chain depth: " chain.Length "`n")
         }
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
@@ -856,7 +856,7 @@ Test_DetermineAction()
             _Log("    Inferred action: " action "`n")
         }
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: could not get focused element (" err.Message ")`n")
     }
@@ -872,7 +872,7 @@ Test_JSON_Serialize()
     {
         testJson := JSON.Stringify({test: 1}, 0)
     }
-    catch Error as e as err
+    catch Error as err
     {
         _Log("  SKIP: JSON library unavailable — " err.Message "`n")
         _Log("  (cJSON DLL may have failed to load. Check AHK bitness matches the DLL.)`n")
@@ -955,7 +955,7 @@ Test_TypeCatalog()
         Assert(result.Count > 30, "at least 30 types returned")
         _Log("    Types returned: " result.Count "`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: TypeCatalog failed (" err.Message ")`n")
 }
 
@@ -989,7 +989,7 @@ Test_PatternCatalog()
 
         _Log("    Patterns returned: " result.Count "`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: PatternCatalog failed (" err.Message ")`n")
 }
 
@@ -1026,7 +1026,7 @@ Test_RootElement()
         Assert(result.Has("Name"), "root has Name")
         _Log("    Root Type: " result["Type"] " Name: " result["Name"] "`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: RootElement failed (" err.Message ")`n")
 }
 
@@ -1047,7 +1047,7 @@ Test_StateEnums()
         Assert(result.Has("DockPosition"), "DockPosition exists")
         _Log("    State enums returned: " result.Count " states`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: StateEnums failed (" err.Message ")`n")
 }
 
@@ -1081,7 +1081,7 @@ Test_CodeRecipe()
 
         _Log("    Recipe test passed`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: CodeRecipe failed (" err.Message ")`n")
 }
 
@@ -1109,7 +1109,7 @@ Test_HighlightElement()
         Assert(result["success"], "highlight succeeds")
         _Log("    Element highlighted`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: Highlight failed (" err.Message ")`n")
 }
 
@@ -1130,7 +1130,7 @@ Test_DumpTree()
         Assert(StrLen(result["dump"]) > 0, "dump string is non-empty")
         _Log("    Dump length: " StrLen(result["dump"]) " chars`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: DumpTree failed (" err.Message ")`n")
 }
 
@@ -1152,7 +1152,7 @@ Test_ElementFromPath()
         Assert(result.Has("Type"), "path result has Type")
         _Log("    Path result Type: " (result.Has("Type") ? result["Type"] : "?") "`n")
     }
-    catch Error as e as err
+    catch Error as err
         _Log("  SKIP: ElementFromPath failed (" err.Message ")`n")
 }
 
