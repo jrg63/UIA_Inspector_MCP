@@ -58,7 +58,7 @@ _OnUnhandledError(err, mode)
             . " UNHANDLED (mode=" mode "): " errMsg errWhat errFile errLine "`n" stack "`n`n"
             , A_Temp "\UIA_MCP_Engine_crash.log")
     }
-    catch
+    catch Error as e
     {
         ; Last resort: write to a separate crash file
         try FileAppend(FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
@@ -69,7 +69,7 @@ _OnUnhandledError(err, mode)
     ; The engine will exit; the daemon's health check will restart it.
     return 1
 }
-OnError(_OnUnhandledError, 1)  ; mode 1 = catch all unhandled exceptions
+OnError(_OnUnhandledError, 1)  ; mode 1 = catch Error as e all unhandled exceptions
 
 ; Parse command-line args
 for i, arg in A_Args
@@ -190,12 +190,12 @@ _ElementToMap(el)
             m["BoundingRect"] := {left: raw.l, top: raw.t, right: raw.r, bottom: raw.b}
         else
             m["BoundingRect"] := ""
-    } catch
+    } catch Error as e
         m["BoundingRect"] := ""
 
     ; Resolve element HWND via fallback chain
     try m["HWND"] := _ResolveElementHwnd(el)
-    catch
+    catch Error as e
         m["HWND"] := "0"
 
     return(m)
@@ -207,7 +207,7 @@ _PropStr(el, propId)
     {
         return String(el.GetPropertyValue(propId))
     }
-    catch
+    catch Error as e
     {
         return("")
     }
@@ -219,7 +219,7 @@ _PropBool(el, propId)
     {
         return(el.GetPropertyValue(propId) ? true : false)
     }
-    catch
+    catch Error as e
     {
         return(false)
     }
@@ -231,7 +231,7 @@ _PropInt(el, propId)
     {
         return Integer(el.GetPropertyValue(propId))
     }
-    catch
+    catch Error as e
     {
         return(0)
     }
@@ -244,7 +244,7 @@ _PropHwnd(el, propId)
         raw := el.GetPropertyValue(propId)
         return(raw ? Format("0x{:X}", raw) : "0")
     }
-    catch
+    catch Error as e
     {
         return("0")
     }
@@ -283,7 +283,7 @@ _FindDeepestHWND(hwnd, el)
             return(0)
         targetLeft := rect.l, targetTop := rect.t, targetRight := rect.r, targetBottom := rect.b
     }
-    catch
+    catch Error as e
     {
         return(0)
     }
@@ -345,7 +345,7 @@ _BuildCondition(condObj)
             propId := nameToId[key]
         else {
             try propId := Integer(key)
-            catch
+            catch Error as e
                 propId := 0
         }
         if (propId) {
@@ -356,7 +356,7 @@ _BuildCondition(condObj)
                     typeId := UIA_Type.%val%
                     condMap[propId] := typeId
                 }
-                catch
+                catch Error as e
                 {
                     condMap[propId] := String(val)
                 }
@@ -708,7 +708,7 @@ _IsChromiumWindow(hwnd)
     {
         return(UIA.WindowIsChromium("ahk_id " hwnd))
     }
-    catch
+    catch Error as e
     {
         return(false)
     }
@@ -792,7 +792,7 @@ _ResolveLocator(locator)
         {
             root := UIA.ElementFromHandle(locator["hwnd"])
         }
-        catch
+        catch Error as e
         {
             cr := _MakeCacheRequest()
             root := UIA.ElementFromHandle(locator["hwnd"], cr)
@@ -826,7 +826,7 @@ _ResolveLocator(locator)
         if (IsObject(matches) && matches.Length >= index)
             return(matches[index])
     }
-    catch as findErr
+    catch Error as e as findErr
     {
         ; Distinguish COM parameter errors from "not found"
         if (InStr(findErr.Message, "0x80070057") || InStr(findErr.Message, "parameter is incorrect"))
@@ -886,7 +886,7 @@ _HandleInspectAtCursor(params)
     {
         el := UIA.ElementFromPoint(mX, mY)
     }
-    catch as err
+    catch Error as e as err
     {
         ; Chromium browsers, GPU-rendered surfaces, and some
         ; overlays don't expose UIA at the pixel level.
@@ -956,7 +956,7 @@ _HandleGetFocusedElement(params)
 
         return _BuildFullElementResult(el, windowEl, hwnd, targetPid)
     }
-    catch as err
+    catch Error as e as err
     {
         throw Error("Failed to get focused element: " err.Message)
     }
@@ -1002,7 +1002,7 @@ _HandleFindAllElements(params)
         {
             root := UIA.ElementFromHandle(params["hwnd"])
         }
-        catch
+        catch Error as e
         {
             cr := _MakeCacheRequest()
             root := UIA.ElementFromHandle(params["hwnd"], cr)
@@ -1034,7 +1034,7 @@ _HandleFindAllElements(params)
             elements: results
         }
     }
-    catch as err
+    catch Error as e as err
     {
         ; E_INVALIDARG / other COM errors: the condition isn't
         ; compatible with this element type.  Return a descriptive
@@ -1148,7 +1148,7 @@ _EnumWindowsCollect(hwnd, lParam)
             visible: WinGetMinMax(hwnd) != -1
         })
     }
-    catch as err
+    catch Error as e as err
     {
         ; Log the failure so operators can diagnose enumeration gaps.
         ; Previously a bare `try` silently dropped the window.
@@ -1237,7 +1237,7 @@ _HandleGetWindowInfo(params)
             frameworkConfidence: fw.confidence
         }
     }
-    catch as err
+    catch Error as e as err
     {
         throw Error("Failed to get window info: " err.Message)
     }
@@ -1274,7 +1274,7 @@ _HandleCheckMatchCount(params)
             return {count: matches.Length}
         return {count: 0}
     }
-    catch
+    catch Error as e
     {
         return {count: 0}
     }
@@ -1315,7 +1315,7 @@ _HandleGetBoundingRect(params)
             return {left: raw.l, top: raw.t, right: raw.r, bottom: raw.b}
         return {left: 0, top: 0, right: 0, bottom: 0}
     }
-    catch
+    catch Error as e
     {
         return {left: 0, top: 0, right: 0, bottom: 0}
     }
@@ -1563,55 +1563,55 @@ _HandlePerformAction(params)
     {
     case "Invoke":
         try el.Invoke()
-        catch as invokeErr
+        catch Error as e as invokeErr
             throw Error("Invoke failed: " invokeErr.Message)
         return {success: true, action: "Invoke"}
 
     case "Toggle":
         try el.Toggle()
-        catch as toggleErr
+        catch Error as e as toggleErr
             throw Error("Toggle failed: " toggleErr.Message)
         return {success: true, action: "Toggle"}
 
     case "Click":
         try el.Click()
-        catch as clickErr
+        catch Error as e as clickErr
             throw Error("Click failed: " clickErr.Message)
         return {success: true, action: "Click"}
 
     case "Expand":
         try el.Expand()
-        catch as expandErr
+        catch Error as e as expandErr
             throw Error("Expand failed: " expandErr.Message)
         return {success: true, action: "Expand"}
 
     case "Collapse":
         try el.Collapse()
-        catch as collapseErr
+        catch Error as e as collapseErr
             throw Error("Collapse failed: " collapseErr.Message)
         return {success: true, action: "Collapse"}
 
     case "Select":
         try el.Select()
-        catch as selectErr
+        catch Error as e as selectErr
             throw Error("Select failed: " selectErr.Message)
         return {success: true, action: "Select"}
 
     case "ScrollIntoView":
         try el.ScrollIntoView()
-        catch as scrollErr
+        catch Error as e as scrollErr
             throw Error("ScrollIntoView failed: " scrollErr.Message)
         return {success: true, action: "ScrollIntoView"}
 
     case "SetFocus":
         try el.SetFocus()
-        catch as focusErr
+        catch Error as e as focusErr
             throw Error("SetFocus failed: " focusErr.Message)
         return {success: true, action: "SetFocus"}
 
     case "Highlight":
         try el.Highlight()
-        catch as hlErr
+        catch Error as e as hlErr
             throw Error("Highlight failed: " hlErr.Message)
         return {success: true, action: "Highlight"}
 
@@ -1619,7 +1619,7 @@ _HandlePerformAction(params)
         if (value = "")
             throw Error("value is required for SetValue action")
         try el.SetValue(value)
-        catch as svErr
+        catch Error as e as svErr
             throw Error("SetValue failed: " svErr.Message)
         return {success: true, action: "SetValue", value: value}
 
@@ -1644,7 +1644,7 @@ _HandleSetValue(params)
 
     value := params["value"]
     try el.SetValue(value)
-    catch as err
+    catch Error as e as err
         throw Error("SetValue failed: " err.Message)
 
     return {success: true, value: value}
@@ -1670,7 +1670,7 @@ _HandleHighlightElement(params)
         else
             el.Highlight(duration)
     }
-    catch as err
+    catch Error as e as err
         throw Error("Highlight failed: " err.Message)
 
     return {success: true, duration: duration}
@@ -1708,7 +1708,7 @@ _HandleDumpTree(params)
             dump := el.DumpAll()
         return {dump: dump}
     }
-    catch as err
+    catch Error as e as err
         throw Error("DumpAll failed: " err.Message)
 }
 
@@ -1811,7 +1811,7 @@ _HandleElementExists(params)
         }
         return {exists: false, count: 0}
     }
-    catch
+    catch Error as e
     {
         return {exists: false, count: 0}
     }
@@ -2086,7 +2086,7 @@ _SplitPathSegments(path)
 _ElName(el)
 {
     try return el.Name
-    catch
+    catch Error as e
         return "(unnamed)"
 }
 
@@ -2130,7 +2130,7 @@ _HandleGetElementFromPath(params)
         ;   "{Type:50010,...}" — condition object (applied to windowEl's descendants)
         el := _ElementFromPath(windowEl, path)
     }
-    catch as err
+    catch Error as e as err
         throw Error("ElementFromPath failed: " err.Message . " — path: " path)
 
     if (!el)
@@ -2165,7 +2165,7 @@ _HandleGetRootElement(params)
             NativeWindowHandle: _PropHwnd(root, 30020)
         }
     }
-    catch as err
+    catch Error as e as err
         throw Error("GetRootElement failed: " err.Message)
 }
 
@@ -2198,7 +2198,7 @@ _HandleElementFromChromium(params)
     {
         UIA.ActivateChromiumAccessibility(hwnd)
     }
-    catch as err
+    catch Error as e as err
         throw Error("ActivateChromiumAccessibility failed: " err.Message)
 
     cr := _MakeCacheRequest()
@@ -2207,7 +2207,7 @@ _HandleElementFromChromium(params)
     {
         el := UIA.ElementFromChromium(hwnd, false, cr)
     }
-    catch as err
+    catch Error as e as err
         throw Error("ElementFromChromium failed: " err.Message)
 
     if (!el)
@@ -2393,7 +2393,7 @@ _HandleCaptureScreenshot(params)
 
     ; Get window dimensions
     try WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
-    catch as err
+    catch Error as e as err
         throw Error("Could not get window position: " err.Message)
 
     if (w <= 0 || h <= 0)
@@ -2522,7 +2522,7 @@ _HandleGetCodeRecipe(params)
                 . '    btn := winEl.WaitElement({Type: "Button", Name: "OK"},, 5000)`n'
                 . '    btn.Click()`n'
                 . '    Sleep(200)`n'
-                . '} catch as err {`n'
+                . '} catch Error as e as err {`n'
                 . '    MsgBox("Failed: " err.Message)`n'
                 . '}'
         }
@@ -2730,7 +2730,7 @@ _HandleRequest(jsonStr)
     ; Parse JSON
     request := ""
     try request := JSON.Parse(jsonStr)
-    catch {
+    catch Error as e {
         engineLog.Error("JSON parse error: " SubStr(jsonStr, 1, 200))
         return(_RpcError("", -32700, "Parse error"))
     }
@@ -2797,7 +2797,7 @@ _HandleRequest(jsonStr)
     {
         s := JSON.Stringify(params, 0)
         paramsStr := StrLen(s) <= 1024 ? s : SubStr(s, 1, 1024) "… (len=" StrLen(s) ")"
-    } catch
+    } catch Error as e
         paramsStr := "[serialization error]"
 
     tick := A_TickCount
@@ -2816,7 +2816,7 @@ _HandleRequest(jsonStr)
             engineLog.Info("SLOW: " method " took " elapsed "ms params=" paramsStr)
         return(_RpcResult(id, result))
     }
-    catch as err
+    catch Error as e as err
     {
         elapsed := A_TickCount - tick
         errDetail := err.HasProp("What") ? " (" err.What ")" : ""
@@ -3040,7 +3040,7 @@ _HandleDetectFramework(params)
                     clues.Push("UIA FrameworkId: " fwIdStr)
                 }
             }
-        } catch {
+        } catch Error as e {
             clues.Push("UIA element resolution failed — cannot determine FrameworkId")
         }
     }
@@ -3108,7 +3108,7 @@ _HandleGetPixelColor(params)
             hex: hex,
             rgb: [r, g, b]
         }
-    } catch as err {
+    } catch Error as e as err {
         throw Error("Failed to get pixel color: " err.Message)
     }
 }
@@ -3301,7 +3301,7 @@ try
     serverBound := true
     engineLog.Info("TCP server bound to 127.0.0.1:" ENGINE_PORT)
 }
-catch as err
+catch Error as e as err
 {
     OutputDebug "UIA_MCP_Engine: FATAL — " err.Message "`n"
     ; Write error to port file so the extension can detect the failure
@@ -3335,7 +3335,7 @@ _InspectHotkeyHandler(*)
     {
         result := _HandleInspectAtCursor({})
     }
-    catch as err
+    catch Error as e as err
     {
         engineLog.Error("Hotkey error: " err.Message)
         ToolTip("UIA inspect failed: " err.Message)
@@ -3379,7 +3379,7 @@ _InspectHotkeyHandler(*)
         try A_Clipboard := JSON.Stringify(result, 4)
         engineLog.Debug("Hotkey inspect: " elType " " elName)
     }
-    catch as err2
+    catch Error as e as err2
     {
         engineLog.Error("Hotkey display error: " err2.Message)
     }
