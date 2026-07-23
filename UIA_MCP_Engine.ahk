@@ -18,6 +18,7 @@ DetectHiddenWindows true
 
 #Include <UIA>
 #Include <Logger>
+#Include <AHKUtils>
 #Include <UIA_Inspector\cjson>
 
 ; ── cJSON configuration ───────────────────────
@@ -46,16 +47,15 @@ _OnUnhandledError(err, mode)
     ; Capture full error detail before any dialog can appear
     try
     {
-        errMsg := err.HasProp("Message") ? err.Message : String(err)
-        errWhat := err.HasProp("What") ? " (" err.What ")" : ""
-        errFile := err.HasProp("File") ? " in " err.File : ""
-        errLine := err.HasProp("Line") ? " line " err.Line : ""
-        stack  := err.HasProp("Stack") ? "`nStack: " err.Stack : ""
-        engineLog.Error("UNHANDLED ERROR (mode=" mode "): " errMsg errWhat errFile errLine stack)
+        engineLog.Error(BuildExceptionString("UNHANDLED ERROR (mode=" mode ")", err))
         ; Also write to a dedicated crash log so errors survive
         ; engine restarts which may rotate the main log.
         try FileAppend(FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
-            . " UNHANDLED (mode=" mode "): " errMsg errWhat errFile errLine "`n" stack "`n`n"
+            . " UNHANDLED (mode=" mode "): " (err.HasProp("Message") ? err.Message : String(err))
+            . (err.HasProp("What") ? " (" err.What ")" : "")
+            . (err.HasProp("File") ? " in " err.File : "")
+            . (err.HasProp("Line") ? " line " err.Line : "")
+            . (err.HasProp("Stack") ? "`nStack: " err.Stack : "") . "`n`n"
             , A_Temp "\UIA_MCP_Engine_crash.log")
     }
     catch Error as e
